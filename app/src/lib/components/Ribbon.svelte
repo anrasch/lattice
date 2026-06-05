@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { leftView, leftOpen, type LeftView } from "$lib/stores";
+  import { leftView, leftOpen, theme, type LeftView } from "$lib/stores";
 
   const items: { id: LeftView; label: string }[] = [
     { id: "files", label: "Files" },
@@ -82,6 +82,49 @@
       {/if}
     </button>
   {/each}
+
+  <button
+    class="rb theme"
+    title={$theme === "light" ? "Dark mode" : "Light mode"}
+    aria-label="Toggle theme"
+    onclick={() => theme.update((t) => (t === "light" ? "dark" : "light"))}
+  >
+    {#if $theme === "light"}
+      <svg viewBox="0 0 18 18" aria-hidden="true"
+        ><path
+          d="M13.5 10.2A5 5 0 0 1 7.8 4.5 5 5 0 1 0 13.5 10.2Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linejoin="round"
+        /></svg
+      >
+    {:else}
+      <svg viewBox="0 0 18 18" aria-hidden="true"
+        ><circle cx="9" cy="9" r="3.4" fill="none" stroke="currentColor" stroke-width="1.4" /><g
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          ><line x1="9" y1="1.5" x2="9" y2="3" /><line x1="9" y1="15" x2="9" y2="16.5" /><line
+            x1="1.5"
+            y1="9"
+            x2="3"
+            y2="9"
+          /><line x1="15" y1="9" x2="16.5" y2="9" /><line x1="3.6" y1="3.6" x2="4.7" y2="4.7" /><line
+            x1="13.3"
+            y1="13.3"
+            x2="14.4"
+            y2="14.4"
+          /><line x1="3.6" y1="14.4" x2="4.7" y2="13.3" /><line
+            x1="13.3"
+            y1="4.7"
+            x2="14.4"
+            y2="3.6"
+          /></g
+        ></svg
+      >
+    {/if}
+  </button>
 </nav>
 
 <style>
@@ -120,5 +163,9 @@
   .rb.active {
     color: var(--accent);
     background: var(--accent-dim);
+  }
+  .rb.theme {
+    margin-top: auto;
+    margin-bottom: 8px;
   }
 </style>

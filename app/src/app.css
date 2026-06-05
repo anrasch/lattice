@@ -3,7 +3,43 @@
 @import "@fontsource-variable/newsreader";
 
 :root {
-  /* Cool-neutral dark, Obsidian-calm. Layered deepest -> raised. */
+  /* Shared, theme-independent. */
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --font-serif: "Newsreader Variable", Georgia, serif;
+  --ribbon: 44px;
+  --radius: 8px;
+  --radius-sm: 5px;
+}
+
+/* Light is the default theme. */
+:root,
+:root[data-theme="light"] {
+  --bg: #eaecee;
+  --surface: #f8f9fa;
+  --surface-2: #edeff1;
+  --surface-3: #e1e4e7;
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.16);
+
+  --text: #2b2e31;
+  --text-dim: #5e666c;
+  --text-faint: #98a1a7;
+
+  --accent: #1f9488;
+  --accent-bright: #17877a;
+  --accent-dim: rgba(31, 148, 136, 0.13);
+  --accent-line: rgba(31, 148, 136, 0.4);
+  --on-accent: #ffffff;
+
+  --danger: #cf3b2d;
+  --danger-dim: rgba(207, 59, 45, 0.1);
+
+  color-scheme: light;
+}
+
+/* Cool-neutral dark, Obsidian-calm. Layered deepest -> raised. */
+:root[data-theme="dark"] {
   --bg: #18191b;
   --surface: #1d1f21;
   --surface-2: #25282b;
@@ -15,22 +51,14 @@
   --text-dim: #8b9196;
   --text-faint: #5c6166;
 
-  /* Muted teal: reserved for live state (active note, resolved links, editing). */
   --accent: #5fb3a8;
   --accent-bright: #79cdc1;
   --accent-dim: rgba(95, 179, 168, 0.15);
   --accent-line: rgba(95, 179, 168, 0.38);
+  --on-accent: #0e1f1c;
 
   --danger: #d9695f;
   --danger-dim: rgba(217, 105, 95, 0.13);
-
-  --font-sans: "Geist Variable", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
-  --font-serif: "Newsreader Variable", Georgia, serif;
-
-  --ribbon: 44px;
-  --radius: 8px;
-  --radius-sm: 5px;
 
   color-scheme: dark;
 }

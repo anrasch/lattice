@@ -5,6 +5,9 @@ export const currentNote = writable<string | null>(null);
 export const mode = writable<"read" | "edit">("read");
 export const treeEntries = writable<TreeEntry[]>([]);
 
+export type Theme = "light" | "dark";
+export const theme = writable<Theme>("light");
+
 export const openTabs = writable<string[]>([]);
 export type LeftView = "files" | "search" | "orphans" | "broken";
 export const leftView = writable<LeftView>("files");

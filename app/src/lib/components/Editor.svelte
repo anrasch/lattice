@@ -33,7 +33,6 @@
         { backgroundColor: "var(--accent-dim)" },
       ".cm-scroller": { overflow: "auto" },
     },
-    { dark: true },
   );
 
   const highlight = syntaxHighlighting(
@@ -160,7 +159,7 @@
   .primary {
     background: var(--accent);
     border: 1px solid var(--accent);
-    color: #2a1c08;
+    color: var(--on-accent);
   }
   .primary:hover {
     background: var(--accent-bright);

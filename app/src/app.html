@@ -4,7 +4,16 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <title>Lattice</title>
+    <script>
+      // Set the theme before first paint (default light) to avoid a flash.
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("lattice-theme") || "light";
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
