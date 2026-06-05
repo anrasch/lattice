@@ -1,35 +1,36 @@
-@import "@fontsource-variable/hanken-grotesk";
+@import "@fontsource-variable/geist";
 @import "@fontsource-variable/jetbrains-mono";
 @import "@fontsource-variable/newsreader";
 
 :root {
-  /* Warm-dark surfaces, layered from deepest to raised. */
-  --bg: #141210;
-  --surface: #1a1714;
-  --surface-2: #221e19;
-  --surface-3: #2a251e;
-  --border: rgba(233, 220, 195, 0.08);
-  --border-strong: rgba(233, 220, 195, 0.15);
+  /* Cool-neutral dark, Obsidian-calm. Layered deepest -> raised. */
+  --bg: #18191b;
+  --surface: #1d1f21;
+  --surface-2: #25282b;
+  --surface-3: #2f3236;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
 
-  --text: #ece5d8;
-  --text-dim: #a39a88;
-  --text-faint: #6d6557;
+  --text: #d8dadd;
+  --text-dim: #8b9196;
+  --text-faint: #5c6166;
 
-  /* Honey-amber: reserved for live state (selection, resolved links, editing). */
-  --accent: #e6a863;
-  --accent-bright: #f4bd7d;
-  --accent-dim: rgba(230, 168, 99, 0.13);
-  --accent-line: rgba(230, 168, 99, 0.35);
+  /* Muted teal: reserved for live state (active note, resolved links, editing). */
+  --accent: #5fb3a8;
+  --accent-bright: #79cdc1;
+  --accent-dim: rgba(95, 179, 168, 0.15);
+  --accent-line: rgba(95, 179, 168, 0.38);
 
-  --danger: #e3876a;
-  --danger-dim: rgba(227, 135, 106, 0.12);
+  --danger: #d9695f;
+  --danger-dim: rgba(217, 105, 95, 0.13);
 
-  --font-sans: "Hanken Grotesk Variable", system-ui, sans-serif;
+  --font-sans: "Geist Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
   --font-serif: "Newsreader Variable", Georgia, serif;
 
-  --radius: 9px;
-  --radius-sm: 6px;
+  --ribbon: 44px;
+  --radius: 8px;
+  --radius-sm: 5px;
 
   color-scheme: dark;
 }
@@ -46,14 +47,9 @@ body {
 
 body {
   background: var(--bg);
-  /* Subtle warm atmosphere so panels read as layered, not flat. */
-  background-image:
-    radial-gradient(120% 80% at 0% 0%, rgba(230, 168, 99, 0.05), transparent 55%),
-    radial-gradient(100% 90% at 100% 100%, rgba(110, 90, 160, 0.04), transparent 60%);
-  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

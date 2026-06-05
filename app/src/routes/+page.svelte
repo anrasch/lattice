@@ -1,19 +1,15 @@
 <script lang="ts">
-  import Sidebar from "$lib/components/Sidebar.svelte";
+  import Ribbon from "$lib/components/Ribbon.svelte";
+  import FileTree from "$lib/components/FileTree.svelte";
+  import SearchPanel from "$lib/components/SearchPanel.svelte";
+  import ListPanel from "$lib/components/ListPanel.svelte";
+  import Tabs from "$lib/components/Tabs.svelte";
   import NoteView from "$lib/components/NoteView.svelte";
   import LinksPanel from "$lib/components/LinksPanel.svelte";
   import Editor from "$lib/components/Editor.svelte";
-  import { currentNote, mode } from "$lib/stores";
+  import { currentNote, mode, leftView, leftOpen, rightOpen } from "$lib/stores";
 
   let editor = $state<{ save: () => void } | undefined>();
-
-  let lastNote: string | null = null;
-  $effect(() => {
-    if ($currentNote !== lastNote) {
-      lastNote = $currentNote;
-      mode.set("read");
-    }
-  });
 
   function onKey(e: KeyboardEvent) {
     if (!(e.metaKey || e.ctrlKey)) return;
@@ -23,9 +19,22 @@
     } else if (e.key === "s") {
       e.preventDefault();
       editor?.save();
+    } else if (e.key === "\\") {
+      e.preventDefault();
+      leftOpen.update((v) => !v);
     }
   }
 
+  const labels: Record<string, string> = {
+    files: "Files",
+    search: "Search",
+    orphans: "Orphans",
+    broken: "Broken links",
+  };
+
+  let cols = $derived(
+    `var(--ribbon) ${$leftOpen ? "248px" : "0px"} minmax(0, 1fr) ${$rightOpen ? "280px" : "0px"}`,
+  );
   let fileName = $derived($currentNote ? $currentNote.split("/").pop() : "");
   let fileDir = $derived(
     $currentNote && $currentNote.includes("/")
@@ -36,29 +45,68 @@
 
 <svelte:window onkeydown={onKey} />
 
-<main class="shell">
+<main class="shell" style="grid-template-columns: {cols}">
+  <Ribbon />
+
   <aside class="left">
-    <header class="brand">
-      <span class="mark" aria-hidden="true"></span>
-      <span class="wordmark">lattice</span>
-    </header>
-    <Sidebar />
+    <div class="panel-head">{labels[$leftView]}</div>
+    <div class="panel-body">
+      {#if $leftView === "files"}
+        <FileTree />
+      {:else if $leftView === "search"}
+        <SearchPanel />
+      {:else if $leftView === "orphans"}
+        {#key $leftView}<ListPanel kind="orphans" />{/key}
+      {:else}
+        {#key $leftView}<ListPanel kind="broken" />{/key}
+      {/if}
+    </div>
   </aside>
 
   <section class="center">
+    <Tabs />
     {#if $currentNote}
-      <div class="topbar">
+      <div class="note-head">
         <div class="crumb">
           <span class="dir">{fileDir}</span><span class="file">{fileName}</span>
         </div>
-        <button
-          class="edit-toggle"
-          class:active={$mode === "edit"}
-          onclick={() => mode.update((m) => (m === "read" ? "edit" : "read"))}
-        >
-          {$mode === "read" ? "Edit" : "Editing"}
-          <kbd>⌘E</kbd>
-        </button>
+        <div class="actions">
+          <button
+            class="icon-btn"
+            class:on={$mode === "edit"}
+            title="Edit (⌘E)"
+            aria-label="Edit"
+            onclick={() => mode.update((m) => (m === "read" ? "edit" : "read"))}
+          >
+            <svg viewBox="0 0 16 16"
+              ><path
+                d="M10.5 2.5l3 3L6 13l-3.5.5L3 10l7.5-7.5Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linejoin="round"
+              /></svg
+            >
+          </button>
+          <button
+            class="icon-btn"
+            class:on={$rightOpen}
+            title="Toggle connections"
+            aria-label="Toggle connections"
+            onclick={() => rightOpen.update((v) => !v)}
+          >
+            <svg viewBox="0 0 16 16"
+              ><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" /><line
+                x1="10"
+                y1="2.5"
+                x2="10"
+                y2="13.5"
+                stroke="currentColor"
+                stroke-width="1.3"
+              /></svg
+            >
+          </button>
+        </div>
       </div>
       <div class="content">
         {#if $mode === "edit"}
@@ -69,85 +117,79 @@
       </div>
     {:else}
       <div class="empty">
-        <div class="lattice-motif" aria-hidden="true"></div>
-        <p class="empty-title">A graph of your notes</p>
-        <p class="empty-hint">
-          Pick a note from the left, or run <em>Orphans</em>, <em>Broken</em>, or
-          <em>Search</em> to explore the vault.
-        </p>
+        <div class="motif" aria-hidden="true"></div>
+        <p>No note open</p>
+        <span>Pick a file, or search the vault.</span>
       </div>
     {/if}
   </section>
 
   <aside class="right">
-    {#if $currentNote}
-      <div class="pane-head">Connections</div>
-      <LinksPanel note={$currentNote} />
-    {/if}
+    <div class="panel-head">Connections</div>
+    <div class="panel-body">
+      {#if $currentNote}<LinksPanel note={$currentNote} />{/if}
+    </div>
   </aside>
 </main>
 
 <style>
   .shell {
     display: grid;
-    grid-template-columns: 272px 1fr 300px;
     height: 100vh;
     overflow: hidden;
+    transition: grid-template-columns 0.16s ease;
   }
-
-  .left {
+  .left,
+  .right {
+    background: var(--surface);
     display: flex;
     flex-direction: column;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
     overflow: hidden;
+    min-width: 0;
   }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 16px 16px 12px;
+  .left {
+    border-right: 1px solid var(--border);
   }
-  .mark {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    background:
-      linear-gradient(var(--accent), var(--accent)) 0 0 / 100% 1px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) 0 100% / 100% 1px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) 0 0 / 1px 100% no-repeat,
-      linear-gradient(var(--accent), var(--accent)) 100% 0 / 1px 100% no-repeat,
-      linear-gradient(var(--accent-line), var(--accent-line)) 50% 0 / 1px 100%
-        no-repeat,
-      linear-gradient(var(--accent-line), var(--accent-line)) 0 50% / 100% 1px
-        no-repeat;
-    opacity: 0.9;
+  .right {
+    border-left: 1px solid var(--border);
   }
-  .wordmark {
+  .panel-head {
     font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 13px;
-    letter-spacing: 0.14em;
-    color: var(--text);
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 12px 14px 8px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
   }
 
   .center {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: var(--surface);
+    min-width: 0;
   }
-  .topbar {
+  .note-head {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0 28px;
-    height: 52px;
+    justify-content: space-between;
+    height: 40px;
+    padding: 0 16px 0 22px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
   .crumb {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .crumb .dir {
     color: var(--text-faint);
@@ -155,103 +197,65 @@
   .crumb .file {
     color: var(--text-dim);
   }
-  .edit-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-strong);
-    color: var(--text-dim);
-    padding: 5px 10px 5px 12px;
+  .actions {
+    display: flex;
+    gap: 2px;
+  }
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    background: none;
+    border: 0;
     border-radius: var(--radius-sm);
-    font-size: 12.5px;
-    font-weight: 550;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .edit-toggle:hover {
-    color: var(--text);
-    border-color: var(--accent-line);
-  }
-  .edit-toggle.active {
-    background: var(--accent-dim);
-    border-color: var(--accent-line);
-    color: var(--accent-bright);
-  }
-  kbd {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 4px;
     color: var(--text-faint);
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .icon-btn svg {
+    width: 15px;
+    height: 15px;
+  }
+  .icon-btn:hover {
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+  .icon-btn.on {
+    color: var(--accent);
+    background: var(--accent-dim);
   }
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 32px 28px 64px;
+    padding: 36px 40px 80px;
     display: flex;
     flex-direction: column;
-  }
-
-  .right {
-    background: var(--surface);
-    border-left: 1px solid var(--border);
-    overflow-y: auto;
-  }
-  .pane-head,
-  :global(.pane-head) {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-faint);
-    padding: 16px 16px 8px;
   }
 
   .empty {
     margin: auto;
     text-align: center;
-    max-width: 340px;
-    padding: 24px;
+    color: var(--text-dim);
   }
-  .lattice-motif {
-    width: 132px;
-    height: 132px;
-    margin: 0 auto 28px;
+  .empty p {
+    margin: 0 0 4px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .empty span {
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+  .motif {
+    width: 92px;
+    height: 92px;
+    margin: 0 auto 22px;
     background-image:
       linear-gradient(var(--border-strong) 1px, transparent 1px),
       linear-gradient(90deg, var(--border-strong) 1px, transparent 1px);
-    background-size: 22px 22px;
-    -webkit-mask-image: radial-gradient(circle, #000 35%, transparent 72%);
-    mask-image: radial-gradient(circle, #000 35%, transparent 72%);
-    position: relative;
-  }
-  .lattice-motif::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(circle at 50% 50%, var(--accent) 3px, transparent 4px),
-      radial-gradient(circle at 27% 27%, var(--accent-line) 2.5px, transparent 3px),
-      radial-gradient(circle at 73% 73%, var(--accent-line) 2.5px, transparent 3px);
-  }
-  .empty-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text);
-    margin: 0 0 8px;
-  }
-  .empty-hint {
-    color: var(--text-dim);
-    font-size: 13px;
-    line-height: 1.6;
-    margin: 0;
-  }
-  .empty-hint em {
-    font-style: normal;
-    color: var(--accent);
-    font-weight: 550;
+    background-size: 18px 18px;
+    -webkit-mask-image: radial-gradient(circle, #000 30%, transparent 70%);
+    mask-image: radial-gradient(circle, #000 30%, transparent 70%);
   }
 </style>
