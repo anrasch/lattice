@@ -1,6 +1,31 @@
 use crate::model::{NodeType, ParsedNote};
 use crate::wikilink::parse_wikilinks;
+use once_cell::sync::Lazy;
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+use regex::Regex;
+
+static INLINE_CODE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"`[^`\n]*`").unwrap());
+
+/// Remove fenced code blocks and inline code spans so wiki-link extraction
+/// ignores `[[example]]` targets quoted as code (e.g. in a spec). FTS body text
+/// keeps the code; only link scanning is filtered.
+fn strip_code(md: &str) -> String {
+    let mut out = String::new();
+    let mut in_fence = false;
+    for line in md.lines() {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    INLINE_CODE_RE.replace_all(&out, " ").into_owned()
+}
 
 /// Frontmatter ref fields recognized by default (overridable via Config later).
 const DEFAULT_REF_FIELDS: &[&str] = &["related"];
@@ -107,7 +132,7 @@ pub fn parse_note(rel_path: &str, bytes: &[u8]) -> ParsedNote {
         node_type: NodeType::from_path(rel_path),
         frontmatter,
         frontmatter_refs,
-        wikilinks: parse_wikilinks(body),
+        wikilinks: parse_wikilinks(&strip_code(body)),
         md_link_targets,
         body_text: body_text.trim().to_string(),
         body_hash,
@@ -144,5 +169,13 @@ mod tests {
     fn readme_is_index_type() {
         let n = parse_note("docs/README.md", b"# Docs");
         assert_eq!(n.node_type, crate::model::NodeType::Index);
+    }
+
+    #[test]
+    fn wikilinks_in_code_are_ignored() {
+        let doc = "Real [[live]] link.\n\nInline `[[fake]]` code.\n\n```\n[[alsofake]]\n```\n";
+        let n = parse_note("a.md", doc.as_bytes());
+        let targets: Vec<&str> = n.wikilinks.iter().map(|w| w.target.as_str()).collect();
+        assert_eq!(targets, vec!["live"]);
     }
 }
