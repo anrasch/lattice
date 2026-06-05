@@ -72,6 +72,37 @@ impl Vault {
     pub fn context_bundle(&self, note: &str, budget: usize) -> anyhow::Result<bundle::Bundle> {
         bundle::context_bundle(&self.index, &self.root, note, budget)
     }
+
+    /// Rendered (sanitized) HTML for a note.
+    pub fn render(&self, note: &str) -> anyhow::Result<String> {
+        let raw = edit::read_raw(&self.root, note)?;
+        Ok(render::render_html(&raw.content))
+    }
+
+    /// Raw note content + hash for the editor.
+    pub fn read_raw(&self, note: &str) -> anyhow::Result<edit::RawNote> {
+        edit::read_raw(&self.root, note)
+    }
+
+    /// Save edited content (hash-guarded). On success, re-index the file so
+    /// queries reflect the edit immediately.
+    pub fn save(
+        &mut self,
+        note: &str,
+        content: &str,
+        expected_hash: &str,
+    ) -> anyhow::Result<edit::WriteOutcome> {
+        let outcome = edit::write_note(&self.root, note, content, expected_hash)?;
+        if matches!(outcome, edit::WriteOutcome::Written { .. }) {
+            self.index.reindex_path(&self.root, note)?;
+        }
+        Ok(outcome)
+    }
+
+    /// Sidebar tree entries.
+    pub fn tree(&self) -> anyhow::Result<Vec<tree::TreeEntry>> {
+        tree::vault_tree(&self.index)
+    }
 }
 
 #[cfg(test)]
@@ -92,5 +123,30 @@ mod tests {
         // results serialize to JSON for the adapters
         let json = serde_json::to_string(&bl).unwrap();
         assert!(json.contains("\"src\":\"a.md\""));
+    }
+
+    #[test]
+    fn vault_render_read_save_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("n.md"), "# Hi\n\nbody\n").unwrap();
+        let mut vault = Vault::open_in_memory(root).unwrap();
+
+        let html = vault.render("n.md").unwrap();
+        assert!(html.contains("<h1>"));
+
+        let raw = vault.read_raw("n.md").unwrap();
+        assert!(raw.content.contains("# Hi"));
+
+        let out = vault.save("n.md", "# Hi\n\nedited\n", &raw.hash).unwrap();
+        assert!(matches!(out, edit::WriteOutcome::Written { .. }));
+        // index reflects the edit after save
+        assert!(vault
+            .search("edited", 5)
+            .unwrap()
+            .iter()
+            .any(|n| n.path == "n.md"));
+
+        assert!(vault.tree().unwrap().iter().any(|e| e.path == "n.md"));
     }
 }
