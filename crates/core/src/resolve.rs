@@ -24,19 +24,49 @@ fn basename(rel_path: &str) -> &str {
     rel_path.rsplit('/').next().unwrap_or(rel_path)
 }
 
+/// Collapse `.` and `..` segments. Leading `..` that would escape the root are
+/// dropped (clamped), so a markdown `../../docs/x` from `apps/sweight/` lands at
+/// `docs/x`.
+fn normalize(path: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            s => out.push(s),
+        }
+    }
+    out.join("/")
+}
+
 /// Resolve a wiki/markdown target (no anchor/alias) to a vault-relative path,
-/// per the v1 rule: path-qualified = exact; bare name = same-dir preference,
-/// then unique basename, else ambiguous/not-found.
+/// per the v1 rule: path-qualified resolves source-relative first (honoring
+/// `./` and `../`), then vault-root-relative; a bare name uses same-dir
+/// preference, then unique basename, else ambiguous/not-found.
 pub fn resolve_target(source: &str, target: &str, all_paths: &[String]) -> Resolution {
-    let target = target.trim().trim_start_matches("./");
+    let target = target.trim();
 
     if target.contains('/') {
         let want = with_md(target);
-        return if all_paths.iter().any(|p| p == &want) {
-            Resolution::Resolved(want)
+        // 1) relative to the source note's directory (handles ./ and ../).
+        let dir = parent_dir(source);
+        let joined = if dir.is_empty() {
+            want.clone()
         } else {
-            Resolution::NotFound
+            format!("{dir}/{want}")
         };
+        let src_rel = normalize(&joined);
+        if all_paths.iter().any(|p| p == &src_rel) {
+            return Resolution::Resolved(src_rel);
+        }
+        // 2) relative to the vault root.
+        let root_rel = normalize(&want);
+        if !root_rel.is_empty() && all_paths.iter().any(|p| p == &root_rel) {
+            return Resolution::Resolved(root_rel);
+        }
+        return Resolution::NotFound;
     }
 
     let want_name = with_md(target);
@@ -120,6 +150,37 @@ mod tests {
         assert_eq!(
             resolve_target("solo.md", "docs/missing", &paths()),
             Resolution::NotFound
+        );
+    }
+
+    #[test]
+    fn relative_dotdot_resolves_against_source_dir() {
+        let p = vec![
+            "apps/sweight/README.md".to_string(),
+            "docs/infra/app-build-run.md".to_string(),
+        ];
+        // ../../docs/infra/app-build-run from apps/sweight/ -> docs/infra/app-build-run.md
+        assert_eq!(
+            resolve_target(
+                "apps/sweight/README.md",
+                "../../docs/infra/app-build-run",
+                &p
+            ),
+            Resolution::Resolved("docs/infra/app-build-run.md".into())
+        );
+        // ./ same-dir relative
+        assert_eq!(
+            resolve_target("apps/sweight/README.md", "./README", &p),
+            Resolution::Resolved("apps/sweight/README.md".into())
+        );
+    }
+
+    #[test]
+    fn root_relative_wikilink_still_resolves() {
+        // A root-style [[docs/guide]] from a nested note falls back to root-relative.
+        assert_eq!(
+            resolve_target("docs/sub/guide.md", "docs/README", &paths()),
+            Resolution::Resolved("docs/README.md".into())
         );
     }
 }
