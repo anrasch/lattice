@@ -163,8 +163,19 @@ pub fn query(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Full-text search over title+body, ranked by bm25. `text` is an FTS5 query.
-/// Optionally scoped to a directory prefix (drops cross-collection noise).
+/// Turn a free-text query into a safe FTS5 MATCH expression: each
+/// whitespace-separated term becomes a double-quoted phrase, so punctuation
+/// (`end-to-end`, `c++`) and FTS5 operator words can't leak into the grammar.
+fn fts_query(text: &str) -> String {
+    text.split_whitespace()
+        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Full-text search over title+body, ranked by bm25. `text` is free text
+/// (terms are matched literally; no FTS5 operator syntax). Optionally scoped to
+/// a directory prefix (drops cross-collection noise).
 pub fn search(
     idx: &Index,
     text: &str,
@@ -172,6 +183,11 @@ pub fn search(
     limit: usize,
 ) -> anyhow::Result<Vec<Node>> {
     let limit = limit as i64;
+    let q = fts_query(text);
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let text = q.as_str();
     match under {
         Some(d) => {
             let prefix = format!("{}/%", d.trim_end_matches('/'));
@@ -512,6 +528,30 @@ mod tests {
         let s = dir_summary(&idx).unwrap();
         assert_eq!(s.iter().find(|d| d.dir == "/").unwrap().count, 3);
         assert_eq!(s.iter().find(|d| d.dir == "docs").unwrap().count, 2);
+    }
+
+    #[test]
+    fn search_handles_hyphens_and_punctuation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("a.md"),
+            "# A\n\nWe ship end-to-end encryption and sync.\n",
+        )
+        .unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        // Previously threw FTS5 "no such column: to".
+        assert_eq!(search(&idx, "end-to-end", None, 10).unwrap().len(), 1);
+        assert_eq!(
+            search(&idx, "sync end-to-end encryption", None, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        // Empty / whitespace query is safe (no panic, no match).
+        assert_eq!(search(&idx, "   ", None, 10).unwrap().len(), 0);
     }
 
     #[test]
