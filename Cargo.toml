@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/mcp", "crates/cli"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/anrasch/lattice"
+authors = ["Anthony Rasch"]
+
+[workspace.dependencies]
+lattice-core = { path = "crates/core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"

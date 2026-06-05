@@ -1,0 +1,27 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Lattice local config + derived index (never commit a real vault or its cache)
+lattice.config.toml
+*.db
+*.db-shm
+*.db-wal
+
+# Node / webview (Phase B)
+node_modules
+app/web/dist
+app/src-tauri/target
+
+# AI-assistant instructions (local only, keep out of the public repo)
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea
+.vscode

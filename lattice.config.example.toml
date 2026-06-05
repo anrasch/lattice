@@ -1,0 +1,10 @@
+# Copy to lattice.config.toml (git-ignored) and point it at a vault.
+
+# One or more vault roots to index.
+roots = ["./fixtures/vault"]
+
+# Ignore file (gitignore syntax) listing paths kept out of the graph.
+ignore_file = ".aiignore"
+
+# Where the derived SQLite index lives. Rebuildable; never the source of truth.
+db_path = "./lattice.db"

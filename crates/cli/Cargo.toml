@@ -1,0 +1,16 @@
+[package]
+name = "lattice-cli"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Lattice CLI: run vault graph queries from the shell."
+
+[[bin]]
+name = "lattice"
+path = "src/main.rs"
+
+[dependencies]
+lattice-core.workspace = true
+anyhow.workspace = true
