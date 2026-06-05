@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { api, type TreeEntry } from "$lib/api";
   import { currentNote, treeEntries } from "$lib/stores";
+  import QueryViews from "./QueryViews.svelte";
 
   let entries = $state<TreeEntry[]>([]);
 
@@ -17,6 +18,8 @@
     }, {}),
   );
 </script>
+
+<QueryViews />
 
 <nav class="sidebar">
   {#each Object.keys(grouped).sort() as dir}
