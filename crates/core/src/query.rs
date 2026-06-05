@@ -67,6 +67,56 @@ pub fn broken_links(idx: &Index) -> anyhow::Result<Vec<Edge>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// Nodes whose frontmatter matches ALL given key=value pairs (string compare).
+pub fn query(idx: &Index, filters: &[(&str, &str)]) -> anyhow::Result<Vec<Node>> {
+    if filters.is_empty() {
+        let mut stmt = idx
+            .conn()
+            .prepare("SELECT path, title, type FROM nodes ORDER BY path")?;
+        let rows = stmt.query_map([], row_to_node)?;
+        return Ok(rows.collect::<Result<_, _>>()?);
+    }
+    // INTERSECT one node_meta lookup per filter.
+    let mut clauses = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+    for (k, v) in filters {
+        clauses.push("SELECT node_id FROM node_meta WHERE key = ? AND value = ?".to_string());
+        binds.push((*k).to_string());
+        binds.push((*v).to_string());
+    }
+    let sql = format!(
+        "SELECT path, title, type FROM nodes WHERE id IN ({}) ORDER BY path",
+        clauses.join(" INTERSECT ")
+    );
+    let mut stmt = idx.conn().prepare(&sql)?;
+    let bind_refs: Vec<&dyn rusqlite::ToSql> =
+        binds.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(bind_refs.as_slice(), row_to_node)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Full-text search over title+body, ranked by bm25. `text` is an FTS5 query.
+pub fn search(idx: &Index, text: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
+    let mut stmt = idx.conn().prepare(
+        "SELECT n.path, n.title, n.type
+         FROM fts JOIN nodes n ON n.id = fts.rowid
+         WHERE fts MATCH ?1
+         ORDER BY bm25(fts) LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![text, limit as i64], row_to_node)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// All nodes whose path is within `dir` (recursive), i.e. the `contains` tree.
+pub fn index_tree(idx: &Index, dir: &str) -> anyhow::Result<Vec<Node>> {
+    let prefix = format!("{}/%", dir.trim_end_matches('/'));
+    let mut stmt = idx
+        .conn()
+        .prepare("SELECT path, title, type FROM nodes WHERE path LIKE ?1 ORDER BY path")?;
+    let rows = stmt.query_map(params![prefix], row_to_node)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +170,60 @@ mod tests {
         assert!(bl
             .iter()
             .any(|e| e.raw_target == "missing" && e.src == "docs/guide.md"));
+    }
+
+    fn built_meta() -> (tempfile::TempDir, Index) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("a.md"),
+            "---\ntype: spec\nstatus: active\n---\n# A\n\nalpha apple\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("b.md"),
+            "---\ntype: spec\nstatus: done\n---\n# B\n\nbeta\n",
+        )
+        .unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+        (dir, idx)
+    }
+
+    #[test]
+    fn query_filters_by_frontmatter() {
+        let (_d, idx) = built_meta();
+        let r = query(&idx, &[("type", "spec"), ("status", "active")]).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].path, "a.md");
+    }
+
+    #[test]
+    fn search_matches_body_text() {
+        let (_d, idx) = built_meta();
+        let hits = search(&idx, "apple", 10).unwrap();
+        assert_eq!(hits[0].path, "a.md");
+    }
+
+    #[test]
+    fn index_tree_lists_nodes_under_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs/sub")).unwrap();
+        fs::write(root.join("docs/README.md"), "# Docs").unwrap();
+        fs::write(root.join("docs/one.md"), "# One").unwrap();
+        fs::write(root.join("docs/sub/two.md"), "# Two").unwrap();
+        fs::write(root.join("top.md"), "# Top").unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        let mut paths: Vec<String> = index_tree(&idx, "docs")
+            .unwrap()
+            .into_iter()
+            .map(|n| n.path)
+            .collect();
+        paths.sort();
+        assert_eq!(paths, vec!["docs/README.md", "docs/one.md", "docs/sub/two.md"]);
+        assert!(!paths.contains(&"top.md".to_string()));
     }
 }
