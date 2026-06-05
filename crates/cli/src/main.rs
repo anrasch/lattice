@@ -49,8 +49,10 @@ enum Cmd {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
-    /// All nodes under a directory (the contains tree).
+    /// All nodes under a directory (the contains tree). Use "/" for the whole vault.
     Index { dir: String },
+    /// Frontmatter keys + values + counts (discover query filters).
+    Keys,
     /// Token-budgeted context bundle for a note.
     Context {
         note: String,
@@ -88,6 +90,7 @@ fn main() -> Result<()> {
         }
         Cmd::Search { text, limit } => print_json(&vault.search(&text, limit)?),
         Cmd::Index { dir } => print_json(&vault.index_tree(&dir)?),
+        Cmd::Keys => print_json(&vault.meta_keys()?),
         Cmd::Context { note, budget } => print_json(&vault.context_bundle(&note, budget)?),
     }
 }

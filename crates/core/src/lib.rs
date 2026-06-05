@@ -69,6 +69,9 @@ impl Vault {
     pub fn index_tree(&self, dir: &str) -> anyhow::Result<Vec<Node>> {
         query::index_tree(&self.index, dir)
     }
+    pub fn meta_keys(&self) -> anyhow::Result<Vec<query::MetaKey>> {
+        query::meta_keys(&self.index)
+    }
     pub fn context_bundle(&self, note: &str, budget: usize) -> anyhow::Result<bundle::Bundle> {
         bundle::context_bundle(&self.index, &self.root, note, budget)
     }

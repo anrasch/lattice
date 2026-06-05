@@ -1,6 +1,20 @@
 use crate::index::Index;
 use crate::model::{Edge, EdgeKind, Node, NodeType};
 use rusqlite::params;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetaValue {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetaKey {
+    pub key: String,
+    pub distinct: usize,
+    pub values: Vec<MetaValue>,
+}
 
 fn row_to_node(r: &rusqlite::Row) -> rusqlite::Result<Node> {
     let type_str: String = r.get(2)?;
@@ -137,13 +151,71 @@ pub fn search(idx: &Index, text: &str, limit: usize) -> anyhow::Result<Vec<Node>
 }
 
 /// All nodes whose path is within `dir` (recursive), i.e. the `contains` tree.
+/// Root (`""`, `"/"`, or `"."`) returns the whole vault.
 pub fn index_tree(idx: &Index, dir: &str) -> anyhow::Result<Vec<Node>> {
-    let prefix = format!("{}/%", dir.trim_end_matches('/'));
+    let d = dir.trim().trim_matches('/');
+    if d.is_empty() || d == "." {
+        let mut stmt = idx
+            .conn()
+            .prepare("SELECT path, title, type FROM nodes ORDER BY path")?;
+        let rows = stmt.query_map([], row_to_node)?;
+        return Ok(rows.collect::<Result<_, _>>()?);
+    }
+    let prefix = format!("{d}/%");
     let mut stmt = idx
         .conn()
         .prepare("SELECT path, title, type FROM nodes WHERE path LIKE ?1 ORDER BY path")?;
     let rows = stmt.query_map(params![prefix], row_to_node)?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max).collect();
+        format!("{head}…")
+    }
+}
+
+/// Enumerate frontmatter keys with their values + counts, for filter discovery.
+/// Values per key are capped at 40 (ordered by frequency) and truncated to 80
+/// chars so free-text frontmatter doesn't drown the categorical keys.
+pub fn meta_keys(idx: &Index) -> anyhow::Result<Vec<MetaKey>> {
+    let mut stmt = idx.conn().prepare(
+        "SELECT key, value, COUNT(*) c FROM node_meta GROUP BY key, value ORDER BY key, c DESC, value",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+        ))
+    })?;
+    let mut out: Vec<MetaKey> = Vec::new();
+    for row in rows {
+        let (key, value, count) = row?;
+        match out.last_mut() {
+            Some(mk) if mk.key == key => {
+                mk.distinct += 1;
+                if mk.values.len() < 40 {
+                    mk.values.push(MetaValue {
+                        value: truncate(&value, 80),
+                        count,
+                    });
+                }
+            }
+            _ => out.push(MetaKey {
+                key,
+                distinct: 1,
+                values: vec![MetaValue {
+                    value: truncate(&value, 80),
+                    count,
+                }],
+            }),
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -232,6 +304,33 @@ mod tests {
         let (_d, idx) = built_meta();
         let hits = search(&idx, "apple", 10).unwrap();
         assert_eq!(hits[0].path, "a.md");
+    }
+
+    #[test]
+    fn meta_keys_enumerates_frontmatter_with_counts() {
+        let (_d, idx) = built_meta();
+        let keys = meta_keys(&idx).unwrap();
+        let type_key = keys.iter().find(|k| k.key == "type").unwrap();
+        // both a.md and b.md have type: spec
+        assert_eq!(
+            type_key
+                .values
+                .iter()
+                .find(|v| v.value == "spec")
+                .unwrap()
+                .count,
+            2
+        );
+        let status = keys.iter().find(|k| k.key == "status").unwrap();
+        assert_eq!(status.distinct, 2); // active + done
+    }
+
+    #[test]
+    fn index_tree_root_returns_whole_vault() {
+        let (_d, idx) = built_meta();
+        let all = index_tree(&idx, "/").unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(index_tree(&idx, "").unwrap().len(), 2);
     }
 
     #[test]

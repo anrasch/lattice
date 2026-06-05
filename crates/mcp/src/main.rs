@@ -107,7 +107,7 @@ impl LatticeServer {
 
     #[tool(
         name = "vault_query",
-        description = "Nodes whose frontmatter matches all key=value filters."
+        description = "Nodes whose frontmatter matches all key=value filters. Call vault_keys first to discover valid keys/values. Note: `type` is the frontmatter field (e.g. spec/reference), not the structural index/note kind."
     )]
     async fn vault_query(
         &self,
@@ -177,13 +177,21 @@ impl LatticeServer {
 
     #[tool(
         name = "vault_index",
-        description = "All nodes under a directory (contains tree)."
+        description = "All nodes under a directory (contains tree). Use \"/\" for the whole vault."
     )]
     async fn vault_index(
         &self,
         Parameters(DirArg { dir }): Parameters<DirArg>,
     ) -> Result<String, ErrorData> {
         json(&self.vault()?.index_tree(&dir).map_err(internal)?)
+    }
+
+    #[tool(
+        name = "vault_keys",
+        description = "Enumerate frontmatter keys with their values + counts, to discover vault_query filters."
+    )]
+    async fn vault_keys(&self) -> Result<String, ErrorData> {
+        json(&self.vault()?.meta_keys().map_err(internal)?)
     }
 
     #[tool(
