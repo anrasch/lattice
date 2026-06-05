@@ -143,6 +143,107 @@ impl Index {
             .ok();
         Ok(id)
     }
+
+    /// Full build: walk the vault, upsert every note, then resolve edges and add
+    /// directory `contains` edges. Idempotent against an existing index.
+    pub fn build(&self, root: &std::path::Path, ignore_file: &str) -> anyhow::Result<()> {
+        let paths = crate::walk::walk_vault(root, ignore_file)?;
+        for rel in &paths {
+            let full = root.join(rel);
+            let bytes = std::fs::read(&full)?;
+            let mtime = file_mtime(&full);
+            let note = crate::parse::parse_note(rel, &bytes);
+            self.upsert_note(&note, mtime)?;
+        }
+        self.resolve_edges()?;
+        self.add_contains_edges()?;
+        Ok(())
+    }
+
+    /// Resolve every unresolved wikilink/frontmatter_ref edge against the current
+    /// node set using the v1 rule. Ambiguous/not-found stay resolved=0.
+    pub fn resolve_edges(&self) -> anyhow::Result<()> {
+        let all_paths: Vec<String> = {
+            let mut stmt = self.conn.prepare("SELECT path FROM nodes")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let pending: Vec<(i64, String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT e.rowid, n.path, e.raw_target FROM edges e
+                   JOIN nodes n ON n.id=e.src_id
+                 WHERE e.resolved=0 AND e.kind IN ('wikilink','frontmatter_ref')",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for (rowid, src, raw) in pending {
+            if let crate::resolve::Resolution::Resolved(dst) =
+                crate::resolve::resolve_target(&src, &raw, &all_paths)
+            {
+                if let Some(dst_id) = self.node_id(&dst)? {
+                    self.conn.execute(
+                        "UPDATE edges SET dst_id=?1, resolved=1 WHERE rowid=?2",
+                        rusqlite::params![dst_id, rowid],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// For each `index` node (README), add `contains` edges to sibling nodes in
+    /// the same directory. Clears existing contains edges first (idempotent).
+    pub fn add_contains_edges(&self) -> anyhow::Result<()> {
+        self.conn
+            .execute("DELETE FROM edges WHERE kind='contains'", [])?;
+        let indexes: Vec<(i64, String)> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT id, path FROM nodes WHERE type='index'")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let all_nodes: Vec<(i64, String)> = {
+            let mut stmt = self.conn.prepare("SELECT id, path FROM nodes")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for (idx_id, idx_path) in indexes {
+            let dir = match idx_path.rfind('/') {
+                Some(i) => &idx_path[..i],
+                None => "",
+            };
+            for (sib_id, sib_path) in &all_nodes {
+                if *sib_id != idx_id && same_dir(sib_path, dir) {
+                    self.conn.execute(
+                        "INSERT INTO edges(src_id, dst_id, kind, raw_target, anchor, resolved)
+                         VALUES (?1, ?2, 'contains', '', NULL, 1)",
+                        rusqlite::params![idx_id, sib_id],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn file_mtime(path: &std::path::Path) -> i64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// True if `path`'s immediate parent directory equals `dir`.
+fn same_dir(path: &str, dir: &str) -> bool {
+    let parent = match path.rfind('/') {
+        Some(i) => &path[..i],
+        None => "",
+    };
+    parent == dir
 }
 
 fn node_type_str(t: crate::model::NodeType) -> &'static str {
@@ -221,5 +322,60 @@ mod tests {
             .unwrap();
         assert_eq!(raw, "other");
         assert_eq!(resolved, 0); // unresolved until the resolve pass
+    }
+
+    #[test]
+    fn build_resolves_edges_and_adds_contains() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::write(root.join("docs/README.md"), "# Docs\n\nsee [[guide]]\n").unwrap();
+        fs::write(
+            root.join("docs/guide.md"),
+            "# Guide\n\nback to [[README]] and [[missing]]\n",
+        )
+        .unwrap();
+
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        // [[guide]] from docs/README.md resolves to docs/guide.md
+        let resolved_dst: String = idx
+            .conn()
+            .query_row(
+                "SELECT n2.path FROM edges e
+                   JOIN nodes n1 ON n1.id=e.src_id
+                   JOIN nodes n2 ON n2.id=e.dst_id
+                 WHERE n1.path='docs/README.md' AND e.kind='wikilink'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(resolved_dst, "docs/guide.md");
+
+        // [[missing]] stays unresolved
+        let unresolved: i64 = idx
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM edges WHERE raw_target='missing' AND resolved=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(unresolved, 1);
+
+        // contains edge: docs/README.md -> docs/guide.md
+        let contains: i64 = idx
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM edges e
+                   JOIN nodes n1 ON n1.id=e.src_id JOIN nodes n2 ON n2.id=e.dst_id
+                 WHERE e.kind='contains' AND n1.path='docs/README.md' AND n2.path='docs/guide.md'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(contains, 1);
     }
 }
