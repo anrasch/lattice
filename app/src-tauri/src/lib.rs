@@ -60,12 +60,12 @@ fn links(state: State<AppVault>, note: String) -> Result<Vec<Edge>, String> {
 
 #[tauri::command]
 fn orphans(state: State<AppVault>) -> Result<Vec<Node>, String> {
-    state.0.lock().unwrap().orphans().map_err(err)
+    state.0.lock().unwrap().orphans(None, 5000).map_err(err)
 }
 
 #[tauri::command]
 fn broken_links(state: State<AppVault>) -> Result<Vec<Edge>, String> {
-    state.0.lock().unwrap().broken_links().map_err(err)
+    state.0.lock().unwrap().broken_links(None, 5000).map_err(err)
 }
 
 #[tauri::command]

@@ -28,9 +28,19 @@ enum Cmd {
     /// Nodes a note links OUT to.
     Links { note: String },
     /// Nodes with no resolved inbound link.
-    Orphans,
+    Orphans {
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long, default_value_t = 1000)]
+        limit: usize,
+    },
     /// Unresolved `[[targets]]`.
-    BrokenLinks,
+    BrokenLinks {
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long, default_value_t = 1000)]
+        limit: usize,
+    },
     /// Nodes whose frontmatter matches all key=value pairs.
     Query { filters: Vec<String> },
     /// Full-text search over title + body.
@@ -60,8 +70,8 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Backlinks { note } => print_json(&vault.backlinks(&note)?),
         Cmd::Links { note } => print_json(&vault.links(&note)?),
-        Cmd::Orphans => print_json(&vault.orphans()?),
-        Cmd::BrokenLinks => print_json(&vault.broken_links()?),
+        Cmd::Orphans { dir, limit } => print_json(&vault.orphans(dir.as_deref(), limit)?),
+        Cmd::BrokenLinks { dir, limit } => print_json(&vault.broken_links(dir.as_deref(), limit)?),
         Cmd::Query { filters } => {
             let pairs: Vec<(String, String)> = filters
                 .iter()

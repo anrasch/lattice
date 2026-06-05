@@ -46,25 +46,54 @@ pub fn links(idx: &Index, note: &str) -> anyhow::Result<Vec<Edge>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Nodes with no resolved inbound edge of any kind.
-pub fn orphans(idx: &Index) -> anyhow::Result<Vec<Node>> {
-    let mut stmt = idx.conn().prepare(
-        "SELECT path, title, type FROM nodes n
-         WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.dst_id = n.id AND e.resolved = 1)
-         ORDER BY path",
-    )?;
-    let rows = stmt.query_map([], row_to_node)?;
-    Ok(rows.collect::<Result<_, _>>()?)
+/// Nodes with no resolved inbound edge of any kind. Optionally scoped to a
+/// directory prefix and capped at `limit` (keeps an AI surface from drowning).
+pub fn orphans(idx: &Index, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Node>> {
+    let limit = limit as i64;
+    let base = "SELECT path, title, type FROM nodes n
+         WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.dst_id = n.id AND e.resolved = 1)";
+    match under {
+        Some(d) => {
+            let prefix = format!("{}/%", d.trim_end_matches('/'));
+            let mut stmt = idx
+                .conn()
+                .prepare(&format!("{base} AND n.path LIKE ?1 ORDER BY path LIMIT ?2"))?;
+            let rows = stmt.query_map(params![prefix, limit], row_to_node)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+        None => {
+            let mut stmt = idx
+                .conn()
+                .prepare(&format!("{base} ORDER BY path LIMIT ?1"))?;
+            let rows = stmt.query_map(params![limit], row_to_node)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+    }
 }
 
-/// Unresolved link-like edges (broken `[[targets]]`).
-pub fn broken_links(idx: &Index) -> anyhow::Result<Vec<Edge>> {
-    let sql = format!(
-        "{EDGE_SELECT} WHERE e.resolved = 0 AND e.kind IN ('wikilink','frontmatter_ref') ORDER BY src, raw_target"
-    );
-    let mut stmt = idx.conn().prepare(&sql)?;
-    let rows = stmt.query_map([], edge_from_row)?;
-    Ok(rows.collect::<Result<_, _>>()?)
+/// Unresolved link-like edges (broken `[[targets]]`). Optionally scoped to a
+/// source-directory prefix and capped at `limit`.
+pub fn broken_links(idx: &Index, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Edge>> {
+    let limit = limit as i64;
+    let base =
+        format!("{EDGE_SELECT} WHERE e.resolved = 0 AND e.kind IN ('wikilink','frontmatter_ref')");
+    match under {
+        Some(d) => {
+            let prefix = format!("{}/%", d.trim_end_matches('/'));
+            let mut stmt = idx.conn().prepare(&format!(
+                "{base} AND n1.path LIKE ?1 ORDER BY src, raw_target LIMIT ?2"
+            ))?;
+            let rows = stmt.query_map(params![prefix, limit], edge_from_row)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+        None => {
+            let mut stmt = idx
+                .conn()
+                .prepare(&format!("{base} ORDER BY src, raw_target LIMIT ?1"))?;
+            let rows = stmt.query_map(params![limit], edge_from_row)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+    }
 }
 
 /// Nodes whose frontmatter matches ALL given key=value pairs (string compare).
@@ -158,7 +187,7 @@ mod tests {
     #[test]
     fn orphans_have_no_inbound() {
         let (_d, idx) = built();
-        let o = orphans(&idx).unwrap();
+        let o = orphans(&idx, None, 1000).unwrap();
         assert!(o.iter().any(|n| n.path == "orphan.md"));
         assert!(!o.iter().any(|n| n.path == "docs/guide.md"));
     }
@@ -166,7 +195,7 @@ mod tests {
     #[test]
     fn broken_links_lists_unresolved() {
         let (_d, idx) = built();
-        let bl = broken_links(&idx).unwrap();
+        let bl = broken_links(&idx, None, 1000).unwrap();
         assert!(bl
             .iter()
             .any(|e| e.raw_target == "missing" && e.src == "docs/guide.md"));

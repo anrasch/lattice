@@ -17,7 +17,7 @@ fn aiignore_excludes_secret() {
 
 #[test]
 fn missing_note_is_a_broken_link() {
-    let bl = vault().broken_links().unwrap();
+    let bl = vault().broken_links(None, 1000).unwrap();
     assert!(bl.iter().any(|e| e.raw_target == "missing-note"));
 }
 

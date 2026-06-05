@@ -60,11 +60,11 @@ impl Vault {
     pub fn search(&self, text: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
         query::search(&self.index, text, limit)
     }
-    pub fn orphans(&self) -> anyhow::Result<Vec<Node>> {
-        query::orphans(&self.index)
+    pub fn orphans(&self, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Node>> {
+        query::orphans(&self.index, under, limit)
     }
-    pub fn broken_links(&self) -> anyhow::Result<Vec<Edge>> {
-        query::broken_links(&self.index)
+    pub fn broken_links(&self, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Edge>> {
+        query::broken_links(&self.index, under, limit)
     }
     pub fn index_tree(&self, dir: &str) -> anyhow::Result<Vec<Node>> {
         query::index_tree(&self.index, dir)

@@ -74,6 +74,14 @@ struct DirArg {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct ScopeArg {
+    /// Optional directory prefix to scope results to (e.g. "docs").
+    dir: Option<String>,
+    /// Maximum results to return (default 200).
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct ContextArg {
     note: String,
     budget: Option<usize>,
@@ -137,18 +145,34 @@ impl LatticeServer {
 
     #[tool(
         name = "vault_orphans",
-        description = "Nodes with no resolved inbound link."
+        description = "Nodes with no resolved inbound link. Optional dir scope + limit (default 200)."
     )]
-    async fn vault_orphans(&self) -> Result<String, ErrorData> {
-        json(&self.vault()?.orphans().map_err(internal)?)
+    async fn vault_orphans(
+        &self,
+        Parameters(ScopeArg { dir, limit }): Parameters<ScopeArg>,
+    ) -> Result<String, ErrorData> {
+        json(
+            &self
+                .vault()?
+                .orphans(dir.as_deref(), limit.unwrap_or(200))
+                .map_err(internal)?,
+        )
     }
 
     #[tool(
         name = "vault_broken_links",
-        description = "Unresolved [[link targets]]."
+        description = "Unresolved [[link targets]]. Optional dir scope + limit (default 200)."
     )]
-    async fn vault_broken_links(&self) -> Result<String, ErrorData> {
-        json(&self.vault()?.broken_links().map_err(internal)?)
+    async fn vault_broken_links(
+        &self,
+        Parameters(ScopeArg { dir, limit }): Parameters<ScopeArg>,
+    ) -> Result<String, ErrorData> {
+        json(
+            &self
+                .vault()?
+                .broken_links(dir.as_deref(), limit.unwrap_or(200))
+                .map_err(internal)?,
+        )
     }
 
     #[tool(
