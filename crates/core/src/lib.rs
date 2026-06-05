@@ -10,6 +10,7 @@ pub mod parse;
 pub mod query;
 pub mod render;
 pub mod resolve;
+pub mod tree;
 pub mod walk;
 pub mod watch;
 pub mod wikilink;
