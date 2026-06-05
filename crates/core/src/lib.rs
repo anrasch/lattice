@@ -1,16 +1,16 @@
 //! Lattice core engine: parse a markdown vault into a graph, maintain a derived
 //! SQLite index, and answer graph queries. See the design spec for the model.
 
-pub mod config;
-pub mod model;
-pub mod wikilink;
-pub mod parse;
-pub mod walk;
-pub mod resolve;
-pub mod index;
-pub mod query;
 pub mod bundle;
+pub mod config;
+pub mod index;
+pub mod model;
+pub mod parse;
+pub mod query;
+pub mod resolve;
+pub mod walk;
 pub mod watch;
+pub mod wikilink;
 
 pub use config::Config;
 pub use index::Index;

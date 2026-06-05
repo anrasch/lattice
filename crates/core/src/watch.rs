@@ -48,7 +48,7 @@ mod tests {
         let mut saw = false;
         for _ in 0..50 {
             if let Ok(p) = w.rx.recv_timeout(Duration::from_millis(100)) {
-                if p == PathBuf::from("fresh.md") {
+                if p == Path::new("fresh.md") {
                     saw = true;
                     break;
                 }

@@ -113,6 +113,9 @@ mod tests {
         let (_d, idx, root) = built();
         let b = context_bundle(&idx, &root, "hub.md", 1).unwrap();
         assert!(b.manifest.iter().any(|m| m.path == "hub.md" && m.included));
-        assert!(b.manifest.iter().any(|m| m.path == "leaf.md" && !m.included));
+        assert!(b
+            .manifest
+            .iter()
+            .any(|m| m.path == "leaf.md" && !m.included));
     }
 }

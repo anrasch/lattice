@@ -19,7 +19,7 @@ fn edge_from_row(r: &rusqlite::Row) -> rusqlite::Result<Edge> {
     Ok(Edge {
         src: r.get(0)?,
         dst: r.get(1)?,
-        kind: EdgeKind::from_str(&kind_str).unwrap_or(EdgeKind::Wikilink),
+        kind: EdgeKind::from_tag(&kind_str).unwrap_or(EdgeKind::Wikilink),
         raw_target: r.get(3)?,
         resolved: r.get::<_, i64>(4)? != 0,
     })
@@ -223,7 +223,10 @@ mod tests {
             .map(|n| n.path)
             .collect();
         paths.sort();
-        assert_eq!(paths, vec!["docs/README.md", "docs/one.md", "docs/sub/two.md"]);
+        assert_eq!(
+            paths,
+            vec!["docs/README.md", "docs/one.md", "docs/sub/two.md"]
+        );
         assert!(!paths.contains(&"top.md".to_string()));
     }
 }

@@ -107,34 +107,54 @@ impl LatticeServer {
     ) -> Result<String, ErrorData> {
         let pairs: Vec<(String, String)> = filters
             .iter()
-            .filter_map(|f| f.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+            .filter_map(|f| {
+                f.split_once('=')
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+            })
             .collect();
-        let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let refs: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         json(&self.vault()?.query(&refs).map_err(internal)?)
     }
 
-    #[tool(name = "vault_search", description = "Full-text search over title and body.")]
+    #[tool(
+        name = "vault_search",
+        description = "Full-text search over title and body."
+    )]
     async fn vault_search(
         &self,
         Parameters(SearchArg { text, limit }): Parameters<SearchArg>,
     ) -> Result<String, ErrorData> {
-        json(&self
-            .vault()?
-            .search(&text, limit.unwrap_or(20))
-            .map_err(internal)?)
+        json(
+            &self
+                .vault()?
+                .search(&text, limit.unwrap_or(20))
+                .map_err(internal)?,
+        )
     }
 
-    #[tool(name = "vault_orphans", description = "Nodes with no resolved inbound link.")]
+    #[tool(
+        name = "vault_orphans",
+        description = "Nodes with no resolved inbound link."
+    )]
     async fn vault_orphans(&self) -> Result<String, ErrorData> {
         json(&self.vault()?.orphans().map_err(internal)?)
     }
 
-    #[tool(name = "vault_broken_links", description = "Unresolved [[link targets]].")]
+    #[tool(
+        name = "vault_broken_links",
+        description = "Unresolved [[link targets]]."
+    )]
     async fn vault_broken_links(&self) -> Result<String, ErrorData> {
         json(&self.vault()?.broken_links().map_err(internal)?)
     }
 
-    #[tool(name = "vault_index", description = "All nodes under a directory (contains tree).")]
+    #[tool(
+        name = "vault_index",
+        description = "All nodes under a directory (contains tree)."
+    )]
     async fn vault_index(
         &self,
         Parameters(DirArg { dir }): Parameters<DirArg>,
@@ -150,10 +170,12 @@ impl LatticeServer {
         &self,
         Parameters(ContextArg { note, budget }): Parameters<ContextArg>,
     ) -> Result<String, ErrorData> {
-        json(&self
-            .vault()?
-            .context_bundle(&note, budget.unwrap_or(8000))
-            .map_err(internal)?)
+        json(
+            &self
+                .vault()?
+                .context_bundle(&note, budget.unwrap_or(8000))
+                .map_err(internal)?,
+        )
     }
 }
 

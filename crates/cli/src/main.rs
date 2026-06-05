@@ -65,10 +65,15 @@ fn main() -> Result<()> {
         Cmd::Query { filters } => {
             let pairs: Vec<(String, String)> = filters
                 .iter()
-                .filter_map(|f| f.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+                .filter_map(|f| {
+                    f.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                })
                 .collect();
-            let refs: Vec<(&str, &str)> =
-                pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            let refs: Vec<(&str, &str)> = pairs
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
             print_json(&vault.query(&refs)?)
         }
         Cmd::Search { text, limit } => print_json(&vault.search(&text, limit)?),

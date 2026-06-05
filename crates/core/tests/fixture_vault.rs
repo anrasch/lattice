@@ -31,7 +31,9 @@ fn guide_has_expected_backlinks() {
 
 #[test]
 fn frontmatter_query_finds_active_specs() {
-    let r = vault().query(&[("type", "spec"), ("status", "active")]).unwrap();
+    let r = vault()
+        .query(&[("type", "spec"), ("status", "active")])
+        .unwrap();
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].path, "docs/guide.md");
 }

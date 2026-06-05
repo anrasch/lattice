@@ -35,7 +35,7 @@ impl EdgeKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_tag(s: &str) -> Option<Self> {
         match s {
             "wikilink" => Some(EdgeKind::Wikilink),
             "frontmatter_ref" => Some(EdgeKind::FrontmatterRef),
@@ -99,8 +99,12 @@ mod tests {
 
     #[test]
     fn edge_kind_roundtrips_as_str() {
-        for k in [EdgeKind::Wikilink, EdgeKind::FrontmatterRef, EdgeKind::Contains] {
-            assert_eq!(EdgeKind::from_str(k.as_str()), Some(k));
+        for k in [
+            EdgeKind::Wikilink,
+            EdgeKind::FrontmatterRef,
+            EdgeKind::Contains,
+        ] {
+            assert_eq!(EdgeKind::from_tag(k.as_str()), Some(k));
         }
     }
 }
