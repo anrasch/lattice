@@ -226,6 +226,35 @@ impl Index {
         }
         Ok(())
     }
+
+    /// Re-index a single file by relative path (create/modify/delete), then
+    /// re-run the resolve + contains passes so cross-references stay correct.
+    /// If the file no longer exists, it is removed from the index.
+    pub fn reindex_path(&self, root: &std::path::Path, rel: &str) -> anyhow::Result<()> {
+        let full = root.join(rel);
+        if full.exists() {
+            let bytes = std::fs::read(&full)?;
+            let note = crate::parse::parse_note(rel, &bytes);
+            // Skip if unchanged (same body hash).
+            let existing: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT body_hash FROM nodes WHERE path=?1",
+                    rusqlite::params![rel],
+                    |r| r.get(0),
+                )
+                .ok();
+            if existing.as_deref() == Some(note.body_hash.as_str()) {
+                return Ok(());
+            }
+            self.upsert_note(&note, file_mtime(&full))?;
+        } else {
+            self.remove_note(rel)?;
+        }
+        self.resolve_edges()?;
+        self.add_contains_edges()?;
+        Ok(())
+    }
 }
 
 fn file_mtime(path: &std::path::Path) -> i64 {
@@ -377,5 +406,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(contains, 1);
+    }
+
+    #[test]
+    fn reindex_path_resolves_a_previously_broken_link() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("src.md"), "# Src\n\n[[target]]\n").unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+        assert_eq!(
+            idx.conn()
+                .query_row("SELECT count(*) FROM edges WHERE resolved=0", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        // Add the target, re-index it, re-resolve.
+        fs::write(root.join("target.md"), "# Target\n").unwrap();
+        idx.reindex_path(root, "target.md").unwrap();
+        assert_eq!(
+            idx.conn()
+                .query_row("SELECT count(*) FROM edges WHERE resolved=0", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 }
