@@ -3,6 +3,7 @@
 
 pub mod bundle;
 pub mod config;
+pub mod edit;
 pub mod index;
 pub mod model;
 pub mod parse;
