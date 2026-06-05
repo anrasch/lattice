@@ -39,6 +39,45 @@ app/          Tauri app (Rust backend + Svelte webview)   [Phase B]
 fixtures/     synthetic vault for tests
 ```
 
+## Usage
+
+Build the workspace:
+
+```bash
+cargo build --release
+```
+
+### CLI
+
+Run any query against a vault from the shell (JSON output):
+
+```bash
+lattice --root /path/to/vault backlinks docs/guide.md
+lattice --root /path/to/vault query type=spec status=active
+lattice --root /path/to/vault broken-links
+lattice --root /path/to/vault context docs/guide.md --budget 8000
+```
+
+### As an MCP server
+
+`lattice-mcp` speaks the Model Context Protocol over stdio. Point it at a vault
+with `LATTICE_ROOT` and register it with any MCP client. For Claude Code, add to
+`.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "lattice": {
+      "command": "/path/to/lattice/target/release/lattice-mcp",
+      "env": { "LATTICE_ROOT": "/path/to/vault", "LATTICE_DB": "/tmp/lattice.db" }
+    }
+  }
+}
+```
+
+Tools exposed: `vault_backlinks`, `vault_links`, `vault_query`, `vault_search`,
+`vault_orphans`, `vault_broken_links`, `vault_index`, `vault_context_bundle`.
+
 ## License
 
 Apache-2.0. See [LICENSE](./LICENSE).

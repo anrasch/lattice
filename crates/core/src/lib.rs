@@ -18,11 +18,6 @@ pub use model::{Edge, EdgeKind, Node, NodeType};
 
 use std::path::{Path, PathBuf};
 
-/// Crate version, used by the scaffold binaries until they gain real commands.
-pub fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
-
 /// High-level handle the adapters (MCP/CLI) use: an index bound to a vault root.
 pub struct Vault {
     index: Index,
