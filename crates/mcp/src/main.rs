@@ -60,17 +60,35 @@ struct NoteArg {
 struct QueryArg {
     /// Frontmatter filters as `key=value` strings; all must match.
     filters: Vec<String>,
+    /// Optional directory prefix to scope to (e.g. "docs").
+    dir: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct SearchArg {
     text: String,
+    /// Optional directory prefix to scope to (e.g. "docs").
+    dir: Option<String>,
     limit: Option<usize>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct DirArg {
     dir: String,
+    /// Max results (default 200).
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SinceArg {
+    /// ISO date (e.g. "2026-06-01"); returns notes updated on/after it.
+    since: String,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct LimitArg {
+    limit: Option<usize>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -111,7 +129,7 @@ impl LatticeServer {
     )]
     async fn vault_query(
         &self,
-        Parameters(QueryArg { filters }): Parameters<QueryArg>,
+        Parameters(QueryArg { filters, dir }): Parameters<QueryArg>,
     ) -> Result<String, ErrorData> {
         let pairs: Vec<(String, String)> = filters
             .iter()
@@ -124,7 +142,12 @@ impl LatticeServer {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        json(&self.vault()?.query(&refs).map_err(internal)?)
+        json(
+            &self
+                .vault()?
+                .query(&refs, dir.as_deref())
+                .map_err(internal)?,
+        )
     }
 
     #[tool(
@@ -133,12 +156,12 @@ impl LatticeServer {
     )]
     async fn vault_search(
         &self,
-        Parameters(SearchArg { text, limit }): Parameters<SearchArg>,
+        Parameters(SearchArg { text, dir, limit }): Parameters<SearchArg>,
     ) -> Result<String, ErrorData> {
         json(
             &self
                 .vault()?
-                .search(&text, limit.unwrap_or(20))
+                .search(&text, dir.as_deref(), limit.unwrap_or(20))
                 .map_err(internal)?,
         )
     }
@@ -177,13 +200,26 @@ impl LatticeServer {
 
     #[tool(
         name = "vault_index",
-        description = "All nodes under a directory (contains tree). Use \"/\" for the whole vault."
+        description = "Notes under a directory (contains tree), capped at limit (default 200). For the whole-vault shape use vault_dirs instead of \"/\"."
     )]
     async fn vault_index(
         &self,
-        Parameters(DirArg { dir }): Parameters<DirArg>,
+        Parameters(DirArg { dir, limit }): Parameters<DirArg>,
     ) -> Result<String, ErrorData> {
-        json(&self.vault()?.index_tree(&dir).map_err(internal)?)
+        json(
+            &self
+                .vault()?
+                .index_tree(&dir, limit.unwrap_or(200))
+                .map_err(internal)?,
+        )
+    }
+
+    #[tool(
+        name = "vault_dirs",
+        description = "Budget-friendly map of the vault: every directory with its note count."
+    )]
+    async fn vault_dirs(&self) -> Result<String, ErrorData> {
+        json(&self.vault()?.dir_summary().map_err(internal)?)
     }
 
     #[tool(
@@ -192,6 +228,38 @@ impl LatticeServer {
     )]
     async fn vault_keys(&self) -> Result<String, ErrorData> {
         json(&self.vault()?.meta_keys().map_err(internal)?)
+    }
+
+    #[tool(
+        name = "vault_changed_since",
+        description = "Notes whose updated/date frontmatter is on/after an ISO date (newest first). Re-ground a session on just the deltas."
+    )]
+    async fn vault_changed_since(
+        &self,
+        Parameters(SinceArg { since, limit }): Parameters<SinceArg>,
+    ) -> Result<String, ErrorData> {
+        json(
+            &self
+                .vault()?
+                .changed_since(&since, limit.unwrap_or(100))
+                .map_err(internal)?,
+        )
+    }
+
+    #[tool(
+        name = "vault_superseded",
+        description = "Supersession edges (src supersedes dst). A dst here is an overruled decision — read the superseding note instead."
+    )]
+    async fn vault_superseded(
+        &self,
+        Parameters(LimitArg { limit }): Parameters<LimitArg>,
+    ) -> Result<String, ErrorData> {
+        json(
+            &self
+                .vault()?
+                .superseded(limit.unwrap_or(200))
+                .map_err(internal)?,
+        )
     }
 
     #[tool(

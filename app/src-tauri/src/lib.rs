@@ -70,7 +70,7 @@ fn broken_links(state: State<AppVault>) -> Result<Vec<Edge>, String> {
 
 #[tauri::command]
 fn search(state: State<AppVault>, text: String) -> Result<Vec<Node>, String> {
-    state.0.lock().unwrap().search(&text, 50).map_err(err)
+    state.0.lock().unwrap().search(&text, None, 50).map_err(err)
 }
 
 #[tauri::command]
@@ -80,7 +80,7 @@ fn query(state: State<AppVault>, filters: Vec<String>) -> Result<Vec<Node>, Stri
         .filter_map(|f| f.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
         .collect();
     let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    state.0.lock().unwrap().query(&refs).map_err(err)
+    state.0.lock().unwrap().query(&refs, None).map_err(err)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

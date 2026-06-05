@@ -89,8 +89,9 @@ pub fn orphans(idx: &Index, under: Option<&str>, limit: usize) -> anyhow::Result
 /// source-directory prefix and capped at `limit`.
 pub fn broken_links(idx: &Index, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Edge>> {
     let limit = limit as i64;
-    let base =
-        format!("{EDGE_SELECT} WHERE e.resolved = 0 AND e.kind IN ('wikilink','frontmatter_ref')");
+    let base = format!(
+        "{EDGE_SELECT} WHERE e.resolved = 0 AND e.kind IN ('wikilink','frontmatter_ref','supersedes')"
+    );
     match under {
         Some(d) => {
             let prefix = format!("{}/%", d.trim_end_matches('/'));
@@ -110,16 +111,35 @@ pub fn broken_links(idx: &Index, under: Option<&str>, limit: usize) -> anyhow::R
     }
 }
 
-/// Nodes whose frontmatter matches ALL given key=value pairs (string compare).
-pub fn query(idx: &Index, filters: &[(&str, &str)]) -> anyhow::Result<Vec<Node>> {
+/// Nodes whose frontmatter matches ALL given key=value pairs (string compare),
+/// optionally scoped to a directory prefix.
+pub fn query(
+    idx: &Index,
+    filters: &[(&str, &str)],
+    under: Option<&str>,
+) -> anyhow::Result<Vec<Node>> {
+    let prefix = under.map(|d| format!("{}/%", d.trim_end_matches('/')));
+
     if filters.is_empty() {
-        let mut stmt = idx
-            .conn()
-            .prepare("SELECT path, title, type FROM nodes ORDER BY path")?;
-        let rows = stmt.query_map([], row_to_node)?;
-        return Ok(rows.collect::<Result<_, _>>()?);
+        return match &prefix {
+            Some(p) => {
+                let mut stmt = idx.conn().prepare(
+                    "SELECT path, title, type FROM nodes WHERE path LIKE ?1 ORDER BY path",
+                )?;
+                let rows = stmt.query_map(params![p], row_to_node)?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            }
+            None => {
+                let mut stmt = idx
+                    .conn()
+                    .prepare("SELECT path, title, type FROM nodes ORDER BY path")?;
+                let rows = stmt.query_map([], row_to_node)?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            }
+        };
     }
-    // INTERSECT one node_meta lookup per filter.
+
+    // INTERSECT one node_meta lookup per filter, then optionally prefix-filter.
     let mut clauses = Vec::new();
     let mut binds: Vec<String> = Vec::new();
     for (k, v) in filters {
@@ -127,10 +147,15 @@ pub fn query(idx: &Index, filters: &[(&str, &str)]) -> anyhow::Result<Vec<Node>>
         binds.push((*k).to_string());
         binds.push((*v).to_string());
     }
-    let sql = format!(
-        "SELECT path, title, type FROM nodes WHERE id IN ({}) ORDER BY path",
+    let mut sql = format!(
+        "SELECT path, title, type FROM nodes WHERE id IN ({})",
         clauses.join(" INTERSECT ")
     );
+    if let Some(p) = &prefix {
+        sql.push_str(" AND path LIKE ?");
+        binds.push(p.clone());
+    }
+    sql.push_str(" ORDER BY path");
     let mut stmt = idx.conn().prepare(&sql)?;
     let bind_refs: Vec<&dyn rusqlite::ToSql> =
         binds.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
@@ -139,33 +164,115 @@ pub fn query(idx: &Index, filters: &[(&str, &str)]) -> anyhow::Result<Vec<Node>>
 }
 
 /// Full-text search over title+body, ranked by bm25. `text` is an FTS5 query.
-pub fn search(idx: &Index, text: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
-    let mut stmt = idx.conn().prepare(
-        "SELECT n.path, n.title, n.type
-         FROM fts JOIN nodes n ON n.id = fts.rowid
-         WHERE fts MATCH ?1
-         ORDER BY bm25(fts) LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(params![text, limit as i64], row_to_node)?;
-    Ok(rows.collect::<Result<_, _>>()?)
+/// Optionally scoped to a directory prefix (drops cross-collection noise).
+pub fn search(
+    idx: &Index,
+    text: &str,
+    under: Option<&str>,
+    limit: usize,
+) -> anyhow::Result<Vec<Node>> {
+    let limit = limit as i64;
+    match under {
+        Some(d) => {
+            let prefix = format!("{}/%", d.trim_end_matches('/'));
+            let mut stmt = idx.conn().prepare(
+                "SELECT n.path, n.title, n.type FROM fts JOIN nodes n ON n.id = fts.rowid
+                 WHERE fts MATCH ?1 AND n.path LIKE ?2 ORDER BY bm25(fts) LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![text, prefix, limit], row_to_node)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+        None => {
+            let mut stmt = idx.conn().prepare(
+                "SELECT n.path, n.title, n.type FROM fts JOIN nodes n ON n.id = fts.rowid
+                 WHERE fts MATCH ?1 ORDER BY bm25(fts) LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![text, limit], row_to_node)?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        }
+    }
 }
 
-/// All nodes whose path is within `dir` (recursive), i.e. the `contains` tree.
-/// Root (`""`, `"/"`, or `"."`) returns the whole vault.
-pub fn index_tree(idx: &Index, dir: &str) -> anyhow::Result<Vec<Node>> {
+/// Nodes whose path is within `dir` (recursive), capped at `limit`. Root
+/// (`""`, `"/"`, `"."`) spans the whole vault — pair with `dir_summary` for a
+/// budget-friendly map first.
+pub fn index_tree(idx: &Index, dir: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
+    let limit = limit as i64;
     let d = dir.trim().trim_matches('/');
     if d.is_empty() || d == "." {
         let mut stmt = idx
             .conn()
-            .prepare("SELECT path, title, type FROM nodes ORDER BY path")?;
-        let rows = stmt.query_map([], row_to_node)?;
+            .prepare("SELECT path, title, type FROM nodes ORDER BY path LIMIT ?1")?;
+        let rows = stmt.query_map(params![limit], row_to_node)?;
         return Ok(rows.collect::<Result<_, _>>()?);
     }
     let prefix = format!("{d}/%");
     let mut stmt = idx
         .conn()
-        .prepare("SELECT path, title, type FROM nodes WHERE path LIKE ?1 ORDER BY path")?;
-    let rows = stmt.query_map(params![prefix], row_to_node)?;
+        .prepare("SELECT path, title, type FROM nodes WHERE path LIKE ?1 ORDER BY path LIMIT ?2")?;
+    let rows = stmt.query_map(params![prefix, limit], row_to_node)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// A directory and how many notes live under it (recursively).
+#[derive(Debug, Clone, Serialize)]
+pub struct DirCount {
+    pub dir: String,
+    pub count: usize,
+}
+
+/// A budget-friendly map of the vault: every directory with its note count.
+/// Cheap "shape of the vault" instead of dumping every leaf.
+pub fn dir_summary(idx: &Index) -> anyhow::Result<Vec<DirCount>> {
+    let mut stmt = idx.conn().prepare("SELECT path FROM nodes")?;
+    let paths: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for p in &paths {
+        // Count this note against every ancestor directory.
+        let mut acc = String::new();
+        let parts: Vec<&str> = p.split('/').collect();
+        for seg in &parts[..parts.len().saturating_sub(1)] {
+            acc = if acc.is_empty() {
+                seg.to_string()
+            } else {
+                format!("{acc}/{seg}")
+            };
+            *counts.entry(acc.clone()).or_insert(0) += 1;
+        }
+        *counts.entry(String::new()).or_insert(0) += 1; // root total
+    }
+    Ok(counts
+        .into_iter()
+        .map(|(dir, count)| DirCount {
+            dir: if dir.is_empty() { "/".to_string() } else { dir },
+            count,
+        })
+        .collect())
+}
+
+/// Notes whose `updated` (or `date`) frontmatter is on/after `since` (ISO date
+/// string compare), newest first. For re-grounding a session on just the deltas.
+pub fn changed_since(idx: &Index, since: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
+    let mut stmt = idx.conn().prepare(
+        "SELECT DISTINCT n.path, n.title, n.type, m.value AS updated
+         FROM nodes n JOIN node_meta m ON m.node_id = n.id
+         WHERE m.key IN ('updated','date') AND m.value >= ?1
+         ORDER BY updated DESC, n.path LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![since, limit as i64], row_to_node)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Resolved supersession edges: `src` supersedes (replaces) `dst`. A `dst`
+/// appearing here is an overruled decision — read the superseding note instead.
+pub fn superseded(idx: &Index, limit: usize) -> anyhow::Result<Vec<Edge>> {
+    let sql = format!(
+        "{EDGE_SELECT} WHERE e.kind = 'supersedes' AND e.resolved = 1 ORDER BY src LIMIT ?1"
+    );
+    let mut stmt = idx.conn().prepare(&sql)?;
+    let rows = stmt.query_map(params![limit as i64], edge_from_row)?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -294,7 +401,7 @@ mod tests {
     #[test]
     fn query_filters_by_frontmatter() {
         let (_d, idx) = built_meta();
-        let r = query(&idx, &[("type", "spec"), ("status", "active")]).unwrap();
+        let r = query(&idx, &[("type", "spec"), ("status", "active")], None).unwrap();
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].path, "a.md");
     }
@@ -302,7 +409,7 @@ mod tests {
     #[test]
     fn search_matches_body_text() {
         let (_d, idx) = built_meta();
-        let hits = search(&idx, "apple", 10).unwrap();
+        let hits = search(&idx, "apple", None, 10).unwrap();
         assert_eq!(hits[0].path, "a.md");
     }
 
@@ -328,9 +435,9 @@ mod tests {
     #[test]
     fn index_tree_root_returns_whole_vault() {
         let (_d, idx) = built_meta();
-        let all = index_tree(&idx, "/").unwrap();
+        let all = index_tree(&idx, "/", 1000).unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!(index_tree(&idx, "").unwrap().len(), 2);
+        assert_eq!(index_tree(&idx, "", 1000).unwrap().len(), 2);
     }
 
     #[test]
@@ -345,7 +452,7 @@ mod tests {
         let idx = Index::open_in_memory().unwrap();
         idx.build(root, ".aiignore").unwrap();
 
-        let mut paths: Vec<String> = index_tree(&idx, "docs")
+        let mut paths: Vec<String> = index_tree(&idx, "docs", 1000)
             .unwrap()
             .into_iter()
             .map(|n| n.path)
@@ -356,5 +463,70 @@ mod tests {
             vec!["docs/README.md", "docs/one.md", "docs/sub/two.md"]
         );
         assert!(!paths.contains(&"top.md".to_string()));
+    }
+
+    #[test]
+    fn supersedes_edge_and_superseded_query() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("old.md"), "# Old\n").unwrap();
+        fs::write(root.join("new.md"), "---\nsupersedes: [old]\n---\n# New\n").unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        let s = superseded(&idx, 100).unwrap();
+        assert!(s.iter().any(|e| e.src == "new.md"
+            && e.dst.as_deref() == Some("old.md")
+            && e.kind == EdgeKind::Supersedes));
+        let bl = backlinks(&idx, "old.md").unwrap();
+        assert!(bl
+            .iter()
+            .any(|e| e.kind == EdgeKind::Supersedes && e.src == "new.md"));
+    }
+
+    #[test]
+    fn changed_since_filters_by_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(
+            root.join("old.md"),
+            "---\nupdated: 2026-01-01\n---\n# Old\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("new.md"),
+            "---\nupdated: 2026-06-01\n---\n# New\n",
+        )
+        .unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        let c = changed_since(&idx, "2026-05-01", 100).unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, "new.md");
+    }
+
+    #[test]
+    fn dir_summary_counts_recursively() {
+        let (_d, idx) = built(); // docs/README.md, docs/guide.md, orphan.md
+        let s = dir_summary(&idx).unwrap();
+        assert_eq!(s.iter().find(|d| d.dir == "/").unwrap().count, 3);
+        assert_eq!(s.iter().find(|d| d.dir == "docs").unwrap().count, 2);
+    }
+
+    #[test]
+    fn search_scopes_by_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::write(root.join("docs/spec.md"), "# Spec\n\nwidget term\n").unwrap();
+        fs::write(root.join("fiction.md"), "# Fiction\n\nwidget term\n").unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        let scoped = search(&idx, "widget", Some("docs"), 10).unwrap();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].path, "docs/spec.md");
+        assert_eq!(search(&idx, "widget", None, 10).unwrap().len(), 2);
     }
 }

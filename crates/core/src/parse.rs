@@ -84,6 +84,7 @@ pub fn parse_note(rel_path: &str, bytes: &[u8]) -> ParsedNote {
     let body_hash = blake3::hash(bytes).to_hex().to_string();
     let (yaml, body) = split_frontmatter(&text);
     let frontmatter = yaml_to_json(yaml);
+    let supersedes = frontmatter_refs(&frontmatter, &["supersedes"]);
     let frontmatter_refs = frontmatter_refs(&frontmatter, DEFAULT_REF_FIELDS);
 
     // Walk the markdown once for: first H1 title, internal .md links, plain body text.
@@ -132,6 +133,7 @@ pub fn parse_note(rel_path: &str, bytes: &[u8]) -> ParsedNote {
         node_type: NodeType::from_path(rel_path),
         frontmatter,
         frontmatter_refs,
+        supersedes,
         wikilinks: parse_wikilinks(&strip_code(body)),
         md_link_targets,
         body_text: body_text.trim().to_string(),

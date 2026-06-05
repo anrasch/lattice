@@ -42,17 +42,40 @@ enum Cmd {
         limit: usize,
     },
     /// Nodes whose frontmatter matches all key=value pairs.
-    Query { filters: Vec<String> },
+    Query {
+        filters: Vec<String>,
+        #[arg(long)]
+        dir: Option<String>,
+    },
     /// Full-text search over title + body.
     Search {
         text: String,
+        #[arg(long)]
+        dir: Option<String>,
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
-    /// All nodes under a directory (the contains tree). Use "/" for the whole vault.
-    Index { dir: String },
+    /// Nodes under a directory (the contains tree). Use "dirs" for the whole-vault shape.
+    Index {
+        dir: String,
+        #[arg(long, default_value_t = 1000)]
+        limit: usize,
+    },
+    /// Directory map of the vault (dir + note count).
+    Dirs,
     /// Frontmatter keys + values + counts (discover query filters).
     Keys,
+    /// Notes updated on/after an ISO date (newest first).
+    Changed {
+        since: String,
+        #[arg(long, default_value_t = 200)]
+        limit: usize,
+    },
+    /// Supersession edges (src supersedes dst).
+    Superseded {
+        #[arg(long, default_value_t = 200)]
+        limit: usize,
+    },
     /// Token-budgeted context bundle for a note.
     Context {
         note: String,
@@ -74,7 +97,7 @@ fn main() -> Result<()> {
         Cmd::Links { note } => print_json(&vault.links(&note)?),
         Cmd::Orphans { dir, limit } => print_json(&vault.orphans(dir.as_deref(), limit)?),
         Cmd::BrokenLinks { dir, limit } => print_json(&vault.broken_links(dir.as_deref(), limit)?),
-        Cmd::Query { filters } => {
+        Cmd::Query { filters, dir } => {
             let pairs: Vec<(String, String)> = filters
                 .iter()
                 .filter_map(|f| {
@@ -86,11 +109,16 @@ fn main() -> Result<()> {
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
-            print_json(&vault.query(&refs)?)
+            print_json(&vault.query(&refs, dir.as_deref())?)
         }
-        Cmd::Search { text, limit } => print_json(&vault.search(&text, limit)?),
-        Cmd::Index { dir } => print_json(&vault.index_tree(&dir)?),
+        Cmd::Search { text, dir, limit } => {
+            print_json(&vault.search(&text, dir.as_deref(), limit)?)
+        }
+        Cmd::Index { dir, limit } => print_json(&vault.index_tree(&dir, limit)?),
+        Cmd::Dirs => print_json(&vault.dir_summary()?),
         Cmd::Keys => print_json(&vault.meta_keys()?),
+        Cmd::Changed { since, limit } => print_json(&vault.changed_since(&since, limit)?),
+        Cmd::Superseded { limit } => print_json(&vault.superseded(limit)?),
         Cmd::Context { note, budget } => print_json(&vault.context_bundle(&note, budget)?),
     }
 }

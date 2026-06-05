@@ -103,6 +103,9 @@ impl Index {
         for r in &note.frontmatter_refs {
             self.insert_unresolved_edge(node_id, "frontmatter_ref", r, None)?;
         }
+        for s in &note.supersedes {
+            self.insert_unresolved_edge(node_id, "supersedes", s, None)?;
+        }
         Ok(())
     }
 
@@ -172,7 +175,7 @@ impl Index {
             let mut stmt = self.conn.prepare(
                 "SELECT e.rowid, n.path, e.raw_target FROM edges e
                    JOIN nodes n ON n.id=e.src_id
-                 WHERE e.resolved=0 AND e.kind IN ('wikilink','frontmatter_ref')",
+                 WHERE e.resolved=0 AND e.kind IN ('wikilink','frontmatter_ref','supersedes')",
             )?;
             let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             rows.collect::<Result<_, _>>()?

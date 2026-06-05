@@ -24,6 +24,8 @@ pub enum EdgeKind {
     Wikilink,
     FrontmatterRef,
     Contains,
+    /// `supersedes:` frontmatter — this note replaces the target (decision history).
+    Supersedes,
 }
 
 impl EdgeKind {
@@ -32,6 +34,7 @@ impl EdgeKind {
             EdgeKind::Wikilink => "wikilink",
             EdgeKind::FrontmatterRef => "frontmatter_ref",
             EdgeKind::Contains => "contains",
+            EdgeKind::Supersedes => "supersedes",
         }
     }
 
@@ -40,6 +43,7 @@ impl EdgeKind {
             "wikilink" => Some(EdgeKind::Wikilink),
             "frontmatter_ref" => Some(EdgeKind::FrontmatterRef),
             "contains" => Some(EdgeKind::Contains),
+            "supersedes" => Some(EdgeKind::Supersedes),
             _ => None,
         }
     }
@@ -61,6 +65,7 @@ pub struct ParsedNote {
     pub node_type: NodeType,
     pub frontmatter: serde_json::Value,
     pub frontmatter_refs: Vec<String>,
+    pub supersedes: Vec<String>,
     pub wikilinks: Vec<WikiLink>,
     pub md_link_targets: Vec<String>,
     pub body_text: String,

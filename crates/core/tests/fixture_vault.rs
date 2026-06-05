@@ -8,7 +8,7 @@ fn vault() -> Vault {
 
 #[test]
 fn aiignore_excludes_secret() {
-    let all = vault().query(&[]).unwrap();
+    let all = vault().query(&[], None).unwrap();
     assert!(
         !all.iter().any(|n| n.path == "secret.md"),
         "secret.md must be ignored"
@@ -32,7 +32,7 @@ fn guide_has_expected_backlinks() {
 #[test]
 fn frontmatter_query_finds_active_specs() {
     let r = vault()
-        .query(&[("type", "spec"), ("status", "active")])
+        .query(&[("type", "spec"), ("status", "active")], None)
         .unwrap();
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].path, "docs/guide.md");

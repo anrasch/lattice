@@ -54,11 +54,20 @@ impl Vault {
     pub fn links(&self, note: &str) -> anyhow::Result<Vec<Edge>> {
         query::links(&self.index, note)
     }
-    pub fn query(&self, filters: &[(&str, &str)]) -> anyhow::Result<Vec<Node>> {
-        query::query(&self.index, filters)
+    pub fn query(
+        &self,
+        filters: &[(&str, &str)],
+        under: Option<&str>,
+    ) -> anyhow::Result<Vec<Node>> {
+        query::query(&self.index, filters, under)
     }
-    pub fn search(&self, text: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
-        query::search(&self.index, text, limit)
+    pub fn search(
+        &self,
+        text: &str,
+        under: Option<&str>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<Node>> {
+        query::search(&self.index, text, under, limit)
     }
     pub fn orphans(&self, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Node>> {
         query::orphans(&self.index, under, limit)
@@ -66,11 +75,20 @@ impl Vault {
     pub fn broken_links(&self, under: Option<&str>, limit: usize) -> anyhow::Result<Vec<Edge>> {
         query::broken_links(&self.index, under, limit)
     }
-    pub fn index_tree(&self, dir: &str) -> anyhow::Result<Vec<Node>> {
-        query::index_tree(&self.index, dir)
+    pub fn index_tree(&self, dir: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
+        query::index_tree(&self.index, dir, limit)
     }
     pub fn meta_keys(&self) -> anyhow::Result<Vec<query::MetaKey>> {
         query::meta_keys(&self.index)
+    }
+    pub fn dir_summary(&self) -> anyhow::Result<Vec<query::DirCount>> {
+        query::dir_summary(&self.index)
+    }
+    pub fn changed_since(&self, since: &str, limit: usize) -> anyhow::Result<Vec<Node>> {
+        query::changed_since(&self.index, since, limit)
+    }
+    pub fn superseded(&self, limit: usize) -> anyhow::Result<Vec<Edge>> {
+        query::superseded(&self.index, limit)
     }
     pub fn context_bundle(&self, note: &str, budget: usize) -> anyhow::Result<bundle::Bundle> {
         bundle::context_bundle(&self.index, &self.root, note, budget)
@@ -145,7 +163,7 @@ mod tests {
         assert!(matches!(out, edit::WriteOutcome::Written { .. }));
         // index reflects the edit after save
         assert!(vault
-            .search("edited", 5)
+            .search("edited", None, 5)
             .unwrap()
             .iter()
             .any(|n| n.path == "n.md"));
