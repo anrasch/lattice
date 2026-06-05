@@ -19,3 +19,24 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+
+  # Frontend of the desktop app. The Tauri Rust crate is its own workspace and
+  # needs system webview libs to build, so CI checks the web layer only (build +
+  # typecheck + unit tests); the Rust command layer is covered by the core tests.
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm run test
