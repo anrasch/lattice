@@ -7,6 +7,7 @@ pub mod index;
 pub mod model;
 pub mod parse;
 pub mod query;
+pub mod render;
 pub mod resolve;
 pub mod walk;
 pub mod watch;
