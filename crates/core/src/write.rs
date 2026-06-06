@@ -170,19 +170,71 @@ fn append_to_list(line: &str, value: &str) -> String {
     format!("{key}: [{}]", items.join(", "))
 }
 
+/// True if `key` is a block-style entry (empty inline value followed by an
+/// indented child line — a `- item` list or nested map). The line-based patcher
+/// only safely handles inline values / `[a, b]` lists, so these must be refused.
+fn is_block_structured(block: &[String], key: &str) -> bool {
+    for (i, line) in block.iter().enumerate() {
+        if key_of(line) == Some(key) {
+            let val = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+            if !val.is_empty() {
+                return false; // inline scalar or [list]
+            }
+            if let Some(next) = block.get(i + 1) {
+                return next.len() != next.trim_start().len(); // indented child
+            }
+            return false;
+        }
+    }
+    false
+}
+
 /// Surgically patch the frontmatter block, preserving untouched lines. Creates a
-/// block if absent. Returns (new_content, warnings).
+/// block if absent. Returns (new_content, warnings). Refuses (returns content
+/// unchanged + a warning) when it can't edit safely: an unparseable existing
+/// block (CRLF / missing closing fence) or a touched key that is block-style.
 pub fn patch_frontmatter_text(
     content: &str,
     set: &[(String, String)],
     add: &[(String, Vec<String>)],
     unset: &[String],
 ) -> (String, Vec<String>) {
-    let warnings = Vec::new();
-    let (mut block, body, had_block) = match split_block(content) {
+    // Refuse an existing-but-unparseable block rather than prepend a second one.
+    let starts_fm = content
+        .strip_prefix('\u{feff}')
+        .unwrap_or(content)
+        .starts_with("---");
+    let parsed = split_block(content);
+    if starts_fm && parsed.is_none() {
+        return (
+            content.to_string(),
+            vec!["refused: cannot parse the frontmatter block (CRLF line endings or missing closing `---`); not patched to avoid corruption".to_string()],
+        );
+    }
+
+    let (mut block, body, had_block) = match parsed {
         Some((b, body)) => (b, body, true),
         None => (Vec::new(), content.to_string(), false),
     };
+
+    // Refuse if any key we'd touch is block-style (would orphan its child lines).
+    let touched = set
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .chain(add.iter().map(|(k, _)| k.as_str()))
+        .chain(unset.iter().map(|k| k.as_str()));
+    for key in touched {
+        if is_block_structured(&block, key) {
+            return (
+                content.to_string(),
+                vec![format!(
+                    "refused: frontmatter key `{key}` is block-style (multi-line); the patcher only supports inline `[a, b]` lists — not patched to avoid corruption"
+                )],
+            );
+        }
+    }
+
+    let warnings = Vec::new();
 
     block.retain(|line| !unset.iter().any(|k| key_of(line) == Some(k.as_str())));
 
@@ -386,6 +438,36 @@ mod tests {
         let set = vec![("status".to_string(), "active".to_string())];
         let (out, _) = patch_frontmatter_text(doc, &set, &[], &[]);
         assert_eq!(out, "---\nstatus: active\n---\n# Title\n\nbody\n");
+    }
+
+    #[test]
+    fn patch_refuses_block_style_list_unchanged() {
+        let doc = "---\ntags:\n  - a\n  - b\n---\n# T\n";
+        let add = vec![("tags".to_string(), vec!["c".to_string()])];
+        let (out, w) = patch_frontmatter_text(doc, &[], &add, &[]);
+        assert_eq!(out, doc); // untouched — no corruption
+        assert!(w
+            .iter()
+            .any(|m| m.contains("refused") && m.contains("block-style")));
+    }
+
+    #[test]
+    fn patch_refuses_unparseable_crlf_block_unchanged() {
+        let doc = "---\r\nstatus: active\r\n---\r\n# T\r\n";
+        let set = vec![("status".to_string(), "shipped".to_string())];
+        let (out, w) = patch_frontmatter_text(doc, &set, &[], &[]);
+        assert_eq!(out, doc); // untouched — no second block prepended
+        assert!(w.iter().any(|m| m.contains("refused")));
+    }
+
+    #[test]
+    fn patch_still_works_on_untouched_block_keys_nearby() {
+        // a block-style key exists, but we only touch a different inline key
+        let doc = "---\nstatus: active\ntags:\n  - a\n---\n# T\n";
+        let set = vec![("status".to_string(), "shipped".to_string())];
+        let (out, w) = patch_frontmatter_text(doc, &set, &[], &[]);
+        assert_eq!(out, "---\nstatus: shipped\ntags:\n  - a\n---\n# T\n");
+        assert!(w.is_empty());
     }
 
     #[test]
