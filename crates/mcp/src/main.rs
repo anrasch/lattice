@@ -3,6 +3,11 @@
 //!
 //! Config via environment: `LATTICE_ROOT` (vault root, default `.`) and
 //! `LATTICE_DB` (index path, default `lattice.db`).
+//!
+//! The index is built once at startup and held behind a `Mutex` (a rusqlite
+//! `Connection` is `Send` but not `Sync`, so the shared handler can't hold one
+//! directly). A background thread keeps it live via the file watcher, so queries
+//! never rebuild and never go stale.
 
 use lattice_core::Vault;
 use rmcp::{
@@ -14,32 +19,35 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Clone)]
 pub struct LatticeServer {
-    root: PathBuf,
-    db: PathBuf,
-    ignore_file: String,
+    vault: Arc<Mutex<Vault>>,
     tool_router: ToolRouter<Self>,
 }
 
 impl LatticeServer {
     fn new() -> Self {
-        let root = std::env::var("LATTICE_ROOT").unwrap_or_else(|_| ".".into());
-        let db = std::env::var("LATTICE_DB").unwrap_or_else(|_| "lattice.db".into());
+        let root = PathBuf::from(std::env::var("LATTICE_ROOT").unwrap_or_else(|_| ".".into()));
+        let db = PathBuf::from(std::env::var("LATTICE_DB").unwrap_or_else(|_| "lattice.db".into()));
+        let vault = Vault::open(&root, &db, ".aiignore").expect("failed to open vault");
         Self {
-            root: PathBuf::from(root),
-            db: PathBuf::from(db),
-            ignore_file: ".aiignore".to_string(),
+            vault: Arc::new(Mutex::new(vault)),
             tool_router: Self::tool_router(),
         }
     }
 
-    /// Open and build the vault fresh per call. Stateless by necessity: a
-    /// rusqlite `Connection` is not `Sync`, so the handler can't hold a `Vault`.
-    /// Acceptable for v1; a long-lived shared index is a later optimization.
-    fn vault(&self) -> Result<Vault, ErrorData> {
-        Vault::open(&self.root, &self.db, &self.ignore_file).map_err(internal)
+    /// Lock the long-lived vault and cheaply revalidate it against disk, so the
+    /// query is fresh without a full rebuild. No `.await` is held while locked,
+    /// so a std `Mutex` is fine.
+    fn vault(&self) -> Result<MutexGuard<'_, Vault>, ErrorData> {
+        let guard = self
+            .vault
+            .lock()
+            .map_err(|_| internal("vault lock poisoned"))?;
+        guard.sync().map_err(internal)?;
+        Ok(guard)
     }
 }
 
