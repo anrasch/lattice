@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 pub struct Vault {
     index: Index,
     root: PathBuf,
+    ignore_file: String,
 }
 
 impl Vault {
@@ -37,6 +38,7 @@ impl Vault {
         Ok(Vault {
             index,
             root: root.to_path_buf(),
+            ignore_file: ignore_file.to_string(),
         })
     }
 
@@ -47,7 +49,14 @@ impl Vault {
         Ok(Vault {
             index,
             root: root.to_path_buf(),
+            ignore_file: ".aiignore".to_string(),
         })
+    }
+
+    /// Cheaply revalidate the index against disk (incremental). Call before a
+    /// read on a long-lived index so queries are fresh without a full rebuild.
+    pub fn sync(&self) -> anyhow::Result<bool> {
+        self.index.sync(&self.root, &self.ignore_file)
     }
 
     pub fn backlinks(&self, note: &str) -> anyhow::Result<Vec<Edge>> {

@@ -258,6 +258,45 @@ impl Index {
         self.add_contains_edges()?;
         Ok(())
     }
+
+    /// Cheap incremental revalidation against disk: re-parse only files whose
+    /// mtime changed (or are new), drop files that vanished, and resolve once if
+    /// anything changed. Avoids the full rebuild while guaranteeing freshness.
+    /// Returns whether anything changed.
+    pub fn sync(&self, root: &std::path::Path, ignore_file: &str) -> anyhow::Result<bool> {
+        use std::collections::{HashMap, HashSet};
+        let disk = crate::walk::walk_vault(root, ignore_file)?;
+        let disk_set: HashSet<&str> = disk.iter().map(|s| s.as_str()).collect();
+
+        let indexed: HashMap<String, i64> = {
+            let mut stmt = self.conn.prepare("SELECT path, mtime FROM nodes")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+
+        let mut changed = false;
+        for rel in &disk {
+            let full = root.join(rel);
+            let m = file_mtime(&full);
+            if indexed.get(rel) != Some(&m) {
+                let bytes = std::fs::read(&full)?;
+                let note = crate::parse::parse_note(rel, &bytes);
+                self.upsert_note(&note, m)?;
+                changed = true;
+            }
+        }
+        for path in indexed.keys() {
+            if !disk_set.contains(path.as_str()) {
+                self.remove_note(path)?;
+                changed = true;
+            }
+        }
+        if changed {
+            self.resolve_edges()?;
+            self.add_contains_edges()?;
+        }
+        Ok(changed)
+    }
 }
 
 fn file_mtime(path: &std::path::Path) -> i64 {
@@ -265,7 +304,7 @@ fn file_mtime(path: &std::path::Path) -> i64 {
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
+        .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
 
@@ -436,5 +475,47 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn sync_picks_up_add_modify_delete() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("keep.md"), "# Keep\n\noriginal\n").unwrap();
+        fs::write(root.join("gone.md"), "# Gone\n").unwrap();
+        let idx = Index::open_in_memory().unwrap();
+        idx.build(root, ".aiignore").unwrap();
+
+        // add a new file, modify one, delete one
+        fs::write(root.join("fresh.md"), "# Fresh\n\nbrandnew\n").unwrap();
+        // ensure a distinct mtime, then modify keep.md
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        fs::write(root.join("keep.md"), "# Keep\n\nUPDATED\n").unwrap();
+        fs::remove_file(root.join("gone.md")).unwrap();
+
+        let changed = idx.sync(root, ".aiignore").unwrap();
+        assert!(changed);
+        assert!(idx.node_id("fresh.md").unwrap().is_some());
+        assert!(idx.node_id("gone.md").unwrap().is_none());
+        let hash: String = idx
+            .conn()
+            .query_row(
+                "SELECT body_hash FROM nodes WHERE path='keep.md'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // modified content reindexed (FTS sees the new word)
+        let mut stmt = idx
+            .conn()
+            .prepare("SELECT count(*) FROM fts WHERE fts MATCH 'UPDATED'")
+            .unwrap();
+        let n: i64 = stmt.query_row([], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+        assert!(!hash.is_empty());
+
+        // second sync with no disk change → nothing changed
+        assert!(!idx.sync(root, ".aiignore").unwrap());
     }
 }
