@@ -46,6 +46,21 @@
     if (path) await setVault(path);
   }
 
+  let menuOpen = $state(false);
+  let otherRecents = $derived(recentList.filter((p) => p !== $vault?.path));
+
+  async function switchTo(path: string) {
+    menuOpen = false;
+    if (path !== $vault?.path) await setVault(path);
+  }
+  async function openOther() {
+    menuOpen = false;
+    await pickVault();
+  }
+  function leaf(p: string) {
+    return p.split("/").filter(Boolean).pop() ?? p;
+  }
+
   function onKey(e: KeyboardEvent) {
     if (!(e.metaKey || e.ctrlKey)) return;
     if (e.key === "e") {
@@ -86,12 +101,36 @@
       <Ribbon />
 
       <aside class="left">
-        <button class="vault-switch" onclick={pickVault} title={$vault.path}>
-          <span class="vname">{$vault.name}</span>
-          <svg viewBox="0 0 16 16" aria-hidden="true"
-            ><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+        <div class="vault-bar">
+          <button
+            class="vault-switch"
+            class:active={menuOpen}
+            onclick={() => (menuOpen = !menuOpen)}
+            title={$vault.path}
           >
-        </button>
+            <span class="vname">{$vault.name}</span>
+            <svg class="chev" class:open={menuOpen} viewBox="0 0 16 16" aria-hidden="true"
+              ><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+            >
+          </button>
+          {#if menuOpen}
+            <button class="menu-backdrop" aria-label="Close menu" onclick={() => (menuOpen = false)}
+            ></button>
+            <div class="vault-menu">
+              {#if otherRecents.length}
+                <div class="mh">Switch to</div>
+                {#each otherRecents as p}
+                  <button class="mi" onclick={() => switchTo(p)} title={p}>
+                    <span class="mname">{leaf(p)}</span>
+                    <span class="mpath">{p}</span>
+                  </button>
+                {/each}
+                <div class="mdiv"></div>
+              {/if}
+              <button class="mi open" onclick={openOther}>Open a folder…</button>
+            </div>
+          {/if}
+        </div>
         <div class="panel-head">{labels[$leftView]}</div>
     <div class="panel-body">
       {#if $leftView === "files"}
@@ -180,6 +219,9 @@
 {/if}
 
 <style>
+  .vault-bar {
+    position: relative;
+  }
   .vault-switch {
     display: flex;
     align-items: center;
@@ -196,19 +238,91 @@
     font-size: 12.5px;
     font-weight: 550;
   }
-  .vault-switch:hover {
+  .vault-switch:hover,
+  .vault-switch.active {
     background: var(--surface-2);
   }
-  .vault-switch .vname {
+  .vname {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .vault-switch svg {
+  .chev {
     width: 14px;
     height: 14px;
     color: var(--text-faint);
     flex-shrink: 0;
+    transition: transform 0.14s ease;
+  }
+  .chev.open {
+    transform: rotate(180deg);
+  }
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: none;
+    border: 0;
+    cursor: default;
+  }
+  .vault-menu {
+    position: absolute;
+    z-index: 41;
+    top: calc(100% - 1px);
+    left: 8px;
+    right: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    padding: 5px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .mh {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 5px 8px 3px;
+  }
+  .mi {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    cursor: pointer;
+    color: var(--text);
+    font: inherit;
+  }
+  .mi:hover {
+    background: var(--surface-3);
+  }
+  .mi.open {
+    font-size: 12.5px;
+    color: var(--accent);
+  }
+  .mname {
+    display: block;
+    font-size: 12.5px;
+  }
+  .mpath {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mdiv {
+    height: 1px;
+    background: var(--border);
+    margin: 5px 4px;
   }
   .shell {
     display: grid;

@@ -90,9 +90,7 @@ fn with_vault<T, E: std::fmt::Display>(
     f: impl FnOnce(&mut Vault) -> Result<T, E>,
 ) -> Result<T, String> {
     let mut guard = state.0.lock().unwrap();
-    let ov = guard
-        .as_mut()
-        .ok_or_else(|| "no vault open".to_string())?;
+    let ov = guard.as_mut().ok_or_else(|| "no vault open".to_string())?;
     f(&mut ov.vault).map_err(|e| e.to_string())
 }
 
@@ -113,13 +111,20 @@ fn recents(app: AppHandle) -> Vec<String> {
     load_config(&app).recents
 }
 
-/// Native folder picker (runs off the main thread, so blocking is fine here).
+/// Native folder picker. Async + non-blocking `pick_folder` (the blocking
+/// variant on the main thread deadlocks the dialog); the result arrives via a
+/// channel, awaited off the runtime.
 #[tauri::command]
-fn pick_vault(app: AppHandle) -> Option<String> {
-    app.dialog()
-        .file()
-        .blocking_pick_folder()
-        .and_then(|fp| fp.as_path().map(|p| p.to_string_lossy().to_string()))
+async fn pick_vault(app: AppHandle) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog().file().pick_folder(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let picked = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten();
+    picked.and_then(|fp| fp.as_path().map(|p| p.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -197,9 +202,15 @@ fn search(state: State<AppState>, text: String) -> Result<Vec<Node>, String> {
 fn query(state: State<AppState>, filters: Vec<String>) -> Result<Vec<Node>, String> {
     let pairs: Vec<(String, String)> = filters
         .iter()
-        .filter_map(|f| f.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+        .filter_map(|f| {
+            f.split_once('=')
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+        })
         .collect();
-    let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let refs: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     with_vault(&state, |v| v.query(&refs, None))
 }
 
