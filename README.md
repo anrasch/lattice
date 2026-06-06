@@ -75,8 +75,21 @@ with `LATTICE_ROOT` and register it with any MCP client. For Claude Code, add to
 }
 ```
 
-Tools exposed: `vault_backlinks`, `vault_links`, `vault_query`, `vault_search`,
-`vault_orphans`, `vault_broken_links`, `vault_index`, `vault_context_bundle`.
+**Read tools:** `vault_backlinks`, `vault_links`, `vault_query`, `vault_search`,
+`vault_orphans`, `vault_broken_links`, `vault_index`, `vault_dirs`, `vault_keys`,
+`vault_changed_since`, `vault_superseded`, `vault_context_bundle`.
+
+**Write tools (structure only):** `vault_rename` (move a note + repair every
+inbound link) and `vault_patch_frontmatter` (set/add/unset keys, surgical YAML).
+Both are **dry-run by default** — they return a diff plan; pass `apply: true` to
+write. Lattice only ever edits working-tree files; it never stages or commits to
+git, and it never writes body prose (use your editor for that).
+
+```bash
+# preview a rename (nothing written); add --apply to do it
+lattice --root /path/to/vault rename docs/old.md docs/new.md
+lattice --root /path/to/vault patch docs/spec.md --set status=shipped --apply
+```
 
 ## License
 
