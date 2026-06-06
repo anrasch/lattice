@@ -134,6 +134,89 @@ pub fn apply_rename(idx: &Index, root: &Path, plan: &RenamePlan) -> anyhow::Resu
     Ok(())
 }
 
+/// Split a doc into (frontmatter_lines, body) excluding the `---` fences.
+/// None if there is no leading block.
+fn split_block(content: &str) -> Option<(Vec<String>, String)> {
+    let rest = content.strip_prefix("---\n")?;
+    let end = rest.find("\n---\n")?;
+    let block = rest[..end].lines().map(|l| l.to_string()).collect();
+    let body = rest[end + 5..].to_string();
+    Some((block, body))
+}
+
+fn key_of(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let colon = trimmed.find(':')?;
+    Some(trimmed[..colon].trim())
+}
+
+/// Append a value into an inline list line like `supersedes: [a, b]` (de-duped).
+fn append_to_list(line: &str, value: &str) -> String {
+    let (key, rhs) = line.split_once(':').unwrap();
+    let rhs = rhs.trim();
+    let inner = rhs
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+    let mut items: Vec<String> = inner
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if !items.iter().any(|i| i == value) {
+        items.push(value.to_string());
+    }
+    format!("{key}: [{}]", items.join(", "))
+}
+
+/// Surgically patch the frontmatter block, preserving untouched lines. Creates a
+/// block if absent. Returns (new_content, warnings).
+pub fn patch_frontmatter_text(
+    content: &str,
+    set: &[(String, String)],
+    add: &[(String, Vec<String>)],
+    unset: &[String],
+) -> (String, Vec<String>) {
+    let warnings = Vec::new();
+    let (mut block, body, had_block) = match split_block(content) {
+        Some((b, body)) => (b, body, true),
+        None => (Vec::new(), content.to_string(), false),
+    };
+
+    block.retain(|line| !unset.iter().any(|k| key_of(line) == Some(k.as_str())));
+
+    for (k, v) in set {
+        if let Some(line) = block.iter_mut().find(|l| key_of(l) == Some(k.as_str())) {
+            *line = format!("{k}: {v}");
+        } else {
+            block.push(format!("{k}: {v}"));
+        }
+    }
+
+    for (k, values) in add {
+        if let Some(line) = block.iter_mut().find(|l| key_of(l) == Some(k.as_str())) {
+            for v in values {
+                *line = append_to_list(line, v);
+            }
+        } else {
+            block.push(format!("{k}: [{}]", values.join(", ")));
+        }
+    }
+
+    if block.is_empty() && !had_block {
+        return (content.to_string(), warnings);
+    }
+
+    let mut out = String::from("---\n");
+    for line in &block {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str("---\n");
+    out.push_str(&body);
+    (out, warnings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +275,52 @@ mod tests {
         let bl = query::backlinks(&idx, "docs/new.md").unwrap();
         assert!(bl.iter().any(|e| e.src == "docs/refer.md"));
         assert!(query::broken_links(&idx, None, 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn patch_sets_replaces_value_preserving_other_keys() {
+        let doc = "---\ntype: spec\nstatus: active\n---\n# T\n";
+        let set = vec![("status".to_string(), "shipped".to_string())];
+        let (out, _) = patch_frontmatter_text(doc, &set, &[], &[]);
+        assert_eq!(out, "---\ntype: spec\nstatus: shipped\n---\n# T\n");
+    }
+
+    #[test]
+    fn patch_set_inserts_missing_key() {
+        let doc = "---\ntype: spec\n---\n# T\n";
+        let set = vec![("updated".to_string(), "2026-06-06".to_string())];
+        let (out, _) = patch_frontmatter_text(doc, &set, &[], &[]);
+        assert_eq!(out, "---\ntype: spec\nupdated: 2026-06-06\n---\n# T\n");
+    }
+
+    #[test]
+    fn patch_add_appends_to_list_field() {
+        let doc = "---\nsupersedes: [a]\n---\n# T\n";
+        let add = vec![("supersedes".to_string(), vec!["b".to_string()])];
+        let (out, _) = patch_frontmatter_text(doc, &[], &add, &[]);
+        assert_eq!(out, "---\nsupersedes: [a, b]\n---\n# T\n");
+    }
+
+    #[test]
+    fn patch_add_creates_list_when_absent() {
+        let doc = "---\ntype: spec\n---\n# T\n";
+        let add = vec![("supersedes".to_string(), vec!["old".to_string()])];
+        let (out, _) = patch_frontmatter_text(doc, &[], &add, &[]);
+        assert_eq!(out, "---\ntype: spec\nsupersedes: [old]\n---\n# T\n");
+    }
+
+    #[test]
+    fn patch_unset_removes_key() {
+        let doc = "---\ntype: spec\nstatus: active\n---\n# T\n";
+        let (out, _) = patch_frontmatter_text(doc, &[], &[], &["status".to_string()]);
+        assert_eq!(out, "---\ntype: spec\n---\n# T\n");
+    }
+
+    #[test]
+    fn patch_creates_block_when_absent() {
+        let doc = "# Title\n\nbody\n";
+        let set = vec![("status".to_string(), "active".to_string())];
+        let (out, _) = patch_frontmatter_text(doc, &set, &[], &[]);
+        assert_eq!(out, "---\nstatus: active\n---\n# Title\n\nbody\n");
     }
 }
