@@ -23,6 +23,7 @@ tiktoken-rs = "0.6"
 toml = "0.8"
 comrak = "0.29"
 ammonia = "4"
+similar = "2"
 
 [dev-dependencies]
 tempfile = "3"

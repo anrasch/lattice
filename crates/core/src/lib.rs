@@ -5,6 +5,7 @@ pub mod bundle;
 pub mod config;
 pub mod edit;
 pub mod index;
+pub mod links;
 pub mod model;
 pub mod parse;
 pub mod query;
@@ -14,6 +15,7 @@ pub mod tree;
 pub mod walk;
 pub mod watch;
 pub mod wikilink;
+pub mod write;
 
 pub use config::Config;
 pub use index::Index;
