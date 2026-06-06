@@ -1,12 +1,16 @@
 # Lattice
 
+[![CI](https://github.com/anrasch/lattice/actions/workflows/ci.yml/badge.svg)](https://github.com/anrasch/lattice/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/anrasch/lattice?sort=semver)](https://github.com/anrasch/lattice/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+
 Local-first markdown knowledge vault optimized for AI cowork. Query your notes as a graph over MCP, edit them in a native Rust and Tauri app.
 
 Lattice treats a directory of plain `.md` files as a knowledge graph. Humans read and edit through a native app; AI agents (Claude and any other MCP client) navigate the same vault by query instead of by `grep`. The markdown files stay the source of truth; the graph is a derived, rebuildable index.
 
 ## Status
 
-Early development. Phase A (core engine + MCP + CLI) is in progress.
+**v0.2.0** — usable day-to-day as a single-user, local tool (macOS app + cross-platform engine/CLI/MCP). The read and structured-write tools are stable and dogfooded. See the [changelog](CHANGELOG.md) and [releases](https://github.com/anrasch/lattice/releases).
 
 ## Why
 
