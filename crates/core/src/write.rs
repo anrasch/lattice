@@ -1,6 +1,7 @@
 use crate::index::Index;
 use crate::links::{rebase_relative, rewrite_inbound};
 use crate::query;
+use crate::resolve::{resolve_target, Resolution};
 use serde::Serialize;
 use std::path::Path;
 
@@ -217,6 +218,66 @@ pub fn patch_frontmatter_text(
     (out, warnings)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PatchPlan {
+    pub note: String,
+    pub diff: String,
+    pub warnings: Vec<String>,
+    pub applied: bool,
+    #[serde(skip)]
+    pub new_content: String,
+}
+
+/// Plan a frontmatter patch: compute the new content + warn on dangling refs.
+pub fn plan_patch(
+    idx: &Index,
+    root: &Path,
+    note: &str,
+    set: &[(String, String)],
+    add: &[(String, Vec<String>)],
+    unset: &[String],
+) -> anyhow::Result<PatchPlan> {
+    let all = all_node_paths(idx)?;
+    if !all.iter().any(|p| p == note) {
+        anyhow::bail!("note not found: {note}");
+    }
+    let content = std::fs::read_to_string(root.join(note))?;
+    let (new_content, mut warnings) = patch_frontmatter_text(&content, set, add, unset);
+
+    let ref_keys = ["related", "supersedes"];
+    for (k, v) in set {
+        if ref_keys.contains(&k.as_str())
+            && matches!(resolve_target(note, v, &all), Resolution::NotFound)
+        {
+            warnings.push(format!("dangling reference: {k} -> {v} (no such note)"));
+        }
+    }
+    for (k, values) in add {
+        if ref_keys.contains(&k.as_str()) {
+            for v in values {
+                if matches!(resolve_target(note, v, &all), Resolution::NotFound) {
+                    warnings.push(format!("dangling reference: {k} -> {v} (no such note)"));
+                }
+            }
+        }
+    }
+
+    Ok(PatchPlan {
+        note: note.to_string(),
+        diff: unified(note, &content, &new_content),
+        warnings,
+        applied: false,
+        new_content,
+    })
+}
+
+/// Apply a patch plan: write the note + reindex it.
+pub fn apply_patch(idx: &Index, root: &Path, plan: &PatchPlan) -> anyhow::Result<()> {
+    std::fs::write(root.join(&plan.note), &plan.new_content)?;
+    idx.reindex_path(root, &plan.note)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,5 +383,28 @@ mod tests {
         let set = vec![("status".to_string(), "active".to_string())];
         let (out, _) = patch_frontmatter_text(doc, &set, &[], &[]);
         assert_eq!(out, "---\nstatus: active\n---\n# Title\n\nbody\n");
+    }
+
+    #[test]
+    fn plan_and_apply_patch_updates_index() {
+        let (_d, idx, root) = vault();
+        // give docs/old.md frontmatter to patch
+        fs::write(root.join("docs/old.md"), "---\nstatus: active\n---\n# Old\n").unwrap();
+        idx.reindex_path(&root, "docs/old.md").unwrap();
+
+        let set = vec![("status".to_string(), "shipped".to_string())];
+        let plan = plan_patch(&idx, &root, "docs/old.md", &set, &[], &[]).unwrap();
+        assert!(plan.diff.contains("status: shipped"));
+        apply_patch(&idx, &root, &plan).unwrap();
+        let r = query::query(&idx, &[("status", "shipped")], None).unwrap();
+        assert!(r.iter().any(|n| n.path == "docs/old.md"));
+    }
+
+    #[test]
+    fn plan_patch_warns_on_dangling_ref() {
+        let (_d, idx, root) = vault();
+        let add = vec![("supersedes".to_string(), vec!["ghost".to_string()])];
+        let plan = plan_patch(&idx, &root, "docs/old.md", &[], &add, &[]).unwrap();
+        assert!(plan.warnings.iter().any(|w| w.contains("ghost")));
     }
 }
