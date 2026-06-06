@@ -94,7 +94,12 @@ impl Vault {
     }
 
     /// Rename/move a note, repairing inbound links. Dry-run unless `apply`.
-    pub fn rename(&mut self, from: &str, to: &str, apply: bool) -> anyhow::Result<write::RenamePlan> {
+    pub fn rename(
+        &mut self,
+        from: &str,
+        to: &str,
+        apply: bool,
+    ) -> anyhow::Result<write::RenamePlan> {
         let mut plan = write::plan_rename(&self.index, &self.root, from, to)?;
         if apply {
             write::apply_rename(&self.index, &self.root, &plan)?;
@@ -232,13 +237,17 @@ mod tests {
         let mut vault = Vault::open_in_memory(root).unwrap();
 
         let set = vec![("status".to_string(), "shipped".to_string())];
-        let plan = vault.patch_frontmatter("a.md", &set, &[], &[], false).unwrap();
+        let plan = vault
+            .patch_frontmatter("a.md", &set, &[], &[], false)
+            .unwrap();
         assert!(!plan.applied);
         assert!(std::fs::read_to_string(root.join("a.md"))
             .unwrap()
             .contains("active"));
 
-        vault.patch_frontmatter("a.md", &set, &[], &[], true).unwrap();
+        vault
+            .patch_frontmatter("a.md", &set, &[], &[], true)
+            .unwrap();
         assert!(std::fs::read_to_string(root.join("a.md"))
             .unwrap()
             .contains("shipped"));

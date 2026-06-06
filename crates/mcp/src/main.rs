@@ -310,9 +310,10 @@ impl LatticeServer {
         Parameters(RenameArg { from, to, apply }): Parameters<RenameArg>,
     ) -> Result<String, ErrorData> {
         let mut v = self.vault()?;
-        json(&v
-            .rename(&from, &to, apply.unwrap_or(false))
-            .map_err(internal)?)
+        json(
+            &v.rename(&from, &to, apply.unwrap_or(false))
+                .map_err(internal)?,
+        )
     }
 
     #[tool(
@@ -321,20 +322,33 @@ impl LatticeServer {
     )]
     async fn vault_patch_frontmatter(
         &self,
-        Parameters(PatchArg { note, set, add, unset, apply }): Parameters<PatchArg>,
+        Parameters(PatchArg {
+            note,
+            set,
+            add,
+            unset,
+            apply,
+        }): Parameters<PatchArg>,
     ) -> Result<String, ErrorData> {
         let set: Vec<(String, String)> = set
             .iter()
-            .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+            .filter_map(|s| {
+                s.split_once('=')
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+            })
             .collect();
         let add: Vec<(String, Vec<String>)> = add
             .iter()
-            .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), vec![v.to_string()])))
+            .filter_map(|s| {
+                s.split_once('=')
+                    .map(|(k, v)| (k.to_string(), vec![v.to_string()]))
+            })
             .collect();
         let mut v = self.vault()?;
-        json(&v
-            .patch_frontmatter(&note, &set, &add, &unset, apply.unwrap_or(false))
-            .map_err(internal)?)
+        json(
+            &v.patch_frontmatter(&note, &set, &add, &unset, apply.unwrap_or(false))
+                .map_err(internal)?,
+        )
     }
 }
 

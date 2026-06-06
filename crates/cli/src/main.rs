@@ -149,11 +149,17 @@ fn main() -> Result<()> {
         } => {
             let set: Vec<(String, String)> = set
                 .iter()
-                .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+                .filter_map(|s| {
+                    s.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                })
                 .collect();
             let add: Vec<(String, Vec<String>)> = add
                 .iter()
-                .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), vec![v.to_string()])))
+                .filter_map(|s| {
+                    s.split_once('=')
+                        .map(|(k, v)| (k.to_string(), vec![v.to_string()]))
+                })
                 .collect();
             print_json(&vault.patch_frontmatter(&note, &set, &add, &unset, apply)?)
         }

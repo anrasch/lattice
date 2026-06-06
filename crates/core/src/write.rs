@@ -304,7 +304,10 @@ mod tests {
         assert_eq!(plan.links_rewritten, 1);
         let changed: Vec<&str> = plan.files_changed.iter().map(|c| c.path.as_str()).collect();
         assert!(changed.contains(&"docs/refer.md"));
-        assert!(plan.files_changed.iter().any(|c| c.diff.contains("[[new]]")));
+        assert!(plan
+            .files_changed
+            .iter()
+            .any(|c| c.diff.contains("[[new]]")));
     }
 
     #[test]
@@ -389,7 +392,11 @@ mod tests {
     fn plan_and_apply_patch_updates_index() {
         let (_d, idx, root) = vault();
         // give docs/old.md frontmatter to patch
-        fs::write(root.join("docs/old.md"), "---\nstatus: active\n---\n# Old\n").unwrap();
+        fs::write(
+            root.join("docs/old.md"),
+            "---\nstatus: active\n---\n# Old\n",
+        )
+        .unwrap();
         idx.reindex_path(&root, "docs/old.md").unwrap();
 
         let set = vec![("status".to_string(), "shipped".to_string())];
