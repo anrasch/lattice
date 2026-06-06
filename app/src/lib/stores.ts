@@ -1,6 +1,7 @@
 import { writable, get } from "svelte/store";
-import type { TreeEntry } from "./api";
+import type { TreeEntry, VaultInfo } from "./api";
 
+export const vault = writable<VaultInfo | null>(null);
 export const currentNote = writable<string | null>(null);
 export const mode = writable<"read" | "edit">("read");
 export const treeEntries = writable<TreeEntry[]>([]);

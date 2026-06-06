@@ -7,9 +7,44 @@
   import NoteView from "$lib/components/NoteView.svelte";
   import LinksPanel from "$lib/components/LinksPanel.svelte";
   import Editor from "$lib/components/Editor.svelte";
-  import { currentNote, mode, leftView, leftOpen, rightOpen } from "$lib/stores";
+  import Welcome from "$lib/components/Welcome.svelte";
+  import { onMount } from "svelte";
+  import { api } from "$lib/api";
+  import {
+    vault,
+    currentNote,
+    openTabs,
+    mode,
+    leftView,
+    leftOpen,
+    rightOpen,
+  } from "$lib/stores";
 
   let editor = $state<{ save: () => void } | undefined>();
+  let recentList = $state<string[]>([]);
+
+  onMount(async () => {
+    vault.set(await api.currentVault());
+    recentList = await api.recents();
+  });
+
+  function resetWorkspace() {
+    currentNote.set(null);
+    openTabs.set([]);
+    leftView.set("files");
+  }
+
+  async function setVault(path: string) {
+    const info = await api.openVault(path);
+    resetWorkspace();
+    vault.set(info);
+    recentList = await api.recents();
+  }
+
+  async function pickVault() {
+    const path = await api.pickVault();
+    if (path) await setVault(path);
+  }
 
   function onKey(e: KeyboardEvent) {
     if (!(e.metaKey || e.ctrlKey)) return;
@@ -45,11 +80,19 @@
 
 <svelte:window onkeydown={onKey} />
 
-<main class="shell" style="grid-template-columns: {cols}">
-  <Ribbon />
+{#if $vault}
+  {#key $vault.path}
+    <main class="shell" style="grid-template-columns: {cols}">
+      <Ribbon />
 
-  <aside class="left">
-    <div class="panel-head">{labels[$leftView]}</div>
+      <aside class="left">
+        <button class="vault-switch" onclick={pickVault} title={$vault.path}>
+          <span class="vname">{$vault.name}</span>
+          <svg viewBox="0 0 16 16" aria-hidden="true"
+            ><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+          >
+        </button>
+        <div class="panel-head">{labels[$leftView]}</div>
     <div class="panel-body">
       {#if $leftView === "files"}
         <FileTree />
@@ -131,8 +174,42 @@
     </div>
   </aside>
 </main>
+  {/key}
+{:else}
+  <Welcome onpick={pickVault} onopen={setVault} recents={recentList} />
+{/if}
 
 <style>
+  .vault-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 550;
+  }
+  .vault-switch:hover {
+    background: var(--surface-2);
+  }
+  .vault-switch .vname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vault-switch svg {
+    width: 14px;
+    height: 14px;
+    color: var(--text-faint);
+    flex-shrink: 0;
+  }
   .shell {
     display: grid;
     height: 100vh;

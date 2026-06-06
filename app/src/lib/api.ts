@@ -27,8 +27,16 @@ export interface RawNote {
 export type WriteOutcome =
   | { outcome: "written"; hash: string }
   | { outcome: "conflict"; on_disk: string };
+export interface VaultInfo {
+  path: string;
+  name: string;
+}
 
 export const api = {
+  currentVault: () => invoke<VaultInfo | null>("current_vault"),
+  recents: () => invoke<string[]>("recents"),
+  pickVault: () => invoke<string | null>("pick_vault"),
+  openVault: (path: string) => invoke<VaultInfo>("open_vault", { path }),
   tree: () => invoke<TreeEntry[]>("tree"),
   render: (note: string) => invoke<string>("render", { note }),
   readRaw: (note: string) => invoke<RawNote>("read_raw", { note }),
