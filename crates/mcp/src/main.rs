@@ -105,6 +105,30 @@ struct ContextArg {
     budget: Option<usize>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct RenameArg {
+    from: String,
+    to: String,
+    /// Write the change. Omit/false to preview (returns a diff plan).
+    apply: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct PatchArg {
+    note: String,
+    /// Replace key values: ["status=shipped", "updated=2026-06-06"].
+    #[serde(default)]
+    set: Vec<String>,
+    /// Append to list fields: ["supersedes=docs/old.md"].
+    #[serde(default)]
+    add: Vec<String>,
+    /// Remove keys: ["draft"].
+    #[serde(default)]
+    unset: Vec<String>,
+    /// Write the change. Omit/false to preview.
+    apply: Option<bool>,
+}
+
 #[tool_router(router = tool_router)]
 impl LatticeServer {
     #[tool(name = "vault_backlinks", description = "Nodes linking to a note.")]
@@ -276,6 +300,41 @@ impl LatticeServer {
                 .context_bundle(&note, budget.unwrap_or(8000))
                 .map_err(internal)?,
         )
+    }
+    #[tool(
+        name = "vault_rename",
+        description = "Move a note and repair every inbound link (wiki/markdown/frontmatter). Dry-run by default; pass apply:true to write. Never touches git."
+    )]
+    async fn vault_rename(
+        &self,
+        Parameters(RenameArg { from, to, apply }): Parameters<RenameArg>,
+    ) -> Result<String, ErrorData> {
+        let mut v = self.vault()?;
+        json(&v
+            .rename(&from, &to, apply.unwrap_or(false))
+            .map_err(internal)?)
+    }
+
+    #[tool(
+        name = "vault_patch_frontmatter",
+        description = "Edit a note's frontmatter (set key=value, add to list fields, unset keys), preserving untouched lines. Dry-run by default; apply:true to write."
+    )]
+    async fn vault_patch_frontmatter(
+        &self,
+        Parameters(PatchArg { note, set, add, unset, apply }): Parameters<PatchArg>,
+    ) -> Result<String, ErrorData> {
+        let set: Vec<(String, String)> = set
+            .iter()
+            .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+            .collect();
+        let add: Vec<(String, Vec<String>)> = add
+            .iter()
+            .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), vec![v.to_string()])))
+            .collect();
+        let mut v = self.vault()?;
+        json(&v
+            .patch_frontmatter(&note, &set, &add, &unset, apply.unwrap_or(false))
+            .map_err(internal)?)
     }
 }
 
