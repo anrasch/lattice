@@ -97,6 +97,43 @@ pub fn plan_rename(idx: &Index, root: &Path, from: &str, to: &str) -> anyhow::Re
     })
 }
 
+/// Apply a rename plan: write rewritten referrers, move the file, reindex all
+/// touched paths. Best-effort rollback of referrer writes on mid-write failure.
+pub fn apply_rename(idx: &Index, root: &Path, plan: &RenamePlan) -> anyhow::Result<()> {
+    let mut written: Vec<(String, String)> = Vec::new();
+    let result = (|| -> anyhow::Result<()> {
+        for (rel, new_content) in &plan.writes {
+            let original = std::fs::read_to_string(root.join(rel)).unwrap_or_default();
+            std::fs::write(root.join(rel), new_content)?;
+            written.push((rel.clone(), original));
+        }
+        if let Some((from, to, moved_content)) = &plan.moved {
+            if let Some(parent) = root.join(to).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(root.join(to), moved_content)?;
+            std::fs::remove_file(root.join(from))?;
+        }
+        Ok(())
+    })();
+
+    if let Err(e) = result {
+        for (rel, original) in &written {
+            let _ = std::fs::write(root.join(rel), original);
+        }
+        return Err(e);
+    }
+
+    if let Some((from, to, _)) = &plan.moved {
+        idx.reindex_path(root, from)?; // gone -> removed from index
+        idx.reindex_path(root, to)?; // new file -> added
+    }
+    for (rel, _) in &plan.writes {
+        idx.reindex_path(root, rel)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +175,22 @@ mod tests {
         let (_d, idx, root) = vault();
         let err = plan_rename(&idx, &root, "docs/ghost.md", "docs/new.md").unwrap_err();
         assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn apply_rename_writes_moves_and_reindexes() {
+        let (_d, idx, root) = vault();
+        let plan = plan_rename(&idx, &root, "docs/old.md", "docs/new.md").unwrap();
+        apply_rename(&idx, &root, &plan).unwrap();
+
+        assert!(!root.join("docs/old.md").exists());
+        assert!(root.join("docs/new.md").exists());
+        let refer = std::fs::read_to_string(root.join("docs/refer.md")).unwrap();
+        assert!(refer.contains("[[new]]"));
+        assert!(idx.node_id("docs/old.md").unwrap().is_none());
+        assert!(idx.node_id("docs/new.md").unwrap().is_some());
+        let bl = query::backlinks(&idx, "docs/new.md").unwrap();
+        assert!(bl.iter().any(|e| e.src == "docs/refer.md"));
+        assert!(query::broken_links(&idx, None, 100).unwrap().is_empty());
     }
 }
