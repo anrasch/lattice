@@ -82,6 +82,25 @@ enum Cmd {
         #[arg(long, default_value_t = 8000)]
         budget: usize,
     },
+    /// Move a note and repair inbound links. Dry-run unless --apply.
+    Rename {
+        from: String,
+        to: String,
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Patch frontmatter. Dry-run unless --apply.
+    Patch {
+        note: String,
+        #[arg(long = "set")]
+        set: Vec<String>,
+        #[arg(long = "add")]
+        add: Vec<String>,
+        #[arg(long = "unset")]
+        unset: Vec<String>,
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<()> {
@@ -91,7 +110,7 @@ fn print_json<T: serde::Serialize>(v: &T) -> Result<()> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let vault = Vault::open(&cli.root, &cli.db, &cli.ignore_file)?;
+    let mut vault = Vault::open(&cli.root, &cli.db, &cli.ignore_file)?;
     match cli.cmd {
         Cmd::Backlinks { note } => print_json(&vault.backlinks(&note)?),
         Cmd::Links { note } => print_json(&vault.links(&note)?),
@@ -120,5 +139,23 @@ fn main() -> Result<()> {
         Cmd::Changed { since, limit } => print_json(&vault.changed_since(&since, limit)?),
         Cmd::Superseded { limit } => print_json(&vault.superseded(limit)?),
         Cmd::Context { note, budget } => print_json(&vault.context_bundle(&note, budget)?),
+        Cmd::Rename { from, to, apply } => print_json(&vault.rename(&from, &to, apply)?),
+        Cmd::Patch {
+            note,
+            set,
+            add,
+            unset,
+            apply,
+        } => {
+            let set: Vec<(String, String)> = set
+                .iter()
+                .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+                .collect();
+            let add: Vec<(String, Vec<String>)> = add
+                .iter()
+                .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_string(), vec![v.to_string()])))
+                .collect();
+            print_json(&vault.patch_frontmatter(&note, &set, &add, &unset, apply)?)
+        }
     }
 }
