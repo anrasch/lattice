@@ -158,6 +158,12 @@ impl Vault {
     pub fn tree(&self) -> anyhow::Result<Vec<tree::TreeEntry>> {
         tree::vault_tree(&self.index)
     }
+
+    /// Re-index a single changed file (create/modify/delete) in place, keeping a
+    /// long-lived index live without a full rebuild. Used by the watcher.
+    pub fn reindex(&mut self, rel: &str) -> anyhow::Result<()> {
+        self.index.reindex_path(&self.root, rel)
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +233,24 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e.src == "a.md"));
+    }
+
+    #[test]
+    fn vault_reindex_picks_up_a_new_file_without_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.md"), "# A\n").unwrap();
+        let mut vault = Vault::open_in_memory(root).unwrap();
+        assert!(vault.search("beta", None, 5).unwrap().is_empty());
+
+        // file appears after the index was built; reindex just that path
+        std::fs::write(root.join("b.md"), "# B\n\nbeta content\n").unwrap();
+        vault.reindex("b.md").unwrap();
+        assert!(vault
+            .search("beta", None, 5)
+            .unwrap()
+            .iter()
+            .any(|n| n.path == "b.md"));
     }
 
     #[test]
