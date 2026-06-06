@@ -91,6 +91,32 @@ lattice --root /path/to/vault rename docs/old.md docs/new.md
 lattice --root /path/to/vault patch docs/spec.md --set status=shipped --apply
 ```
 
+### Make your agent actually use it
+
+Registering the server makes the tools *available*, but agents default to
+`grep`/read out of habit. Add a directive to your project's agent instructions
+(`CLAUDE.md`, `AGENTS.md`, or equivalent) so it reaches for Lattice by default.
+A starting point you can paste and trim:
+
+```markdown
+## Knowledge base — use Lattice, not grep
+
+This repo is indexed by the `lattice` MCP server (`vault_*` tools). Prefer them
+over raw grep/read — they return structure and relationships, not file dumps:
+
+- "Where is X documented / what links here?" → `vault_search`, `vault_backlinks`,
+  then `vault_context_bundle` to load a token-budgeted bundle before a task.
+- Shape & discovery → `vault_dirs`, `vault_index`, `vault_keys` → `vault_query`.
+- Hygiene → `vault_broken_links`, `vault_orphans`, `vault_changed_since`,
+  `vault_superseded` (don't cite a reversed decision).
+- Structural edits → `vault_rename` (move a note + fix every backlink) and
+  `vault_patch_frontmatter` (set/add/unset keys). Both are dry-run by default:
+  preview the diff, then re-call with `apply:true`. They never touch git.
+
+Lattice only sees the indexed vault and only edits structure (location/
+frontmatter/links); body prose stays on your normal edit tools.
+```
+
 ## License
 
 Apache-2.0. See [LICENSE](./LICENSE).
