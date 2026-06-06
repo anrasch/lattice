@@ -92,6 +92,33 @@ impl Vault {
     pub fn superseded(&self, limit: usize) -> anyhow::Result<Vec<Edge>> {
         query::superseded(&self.index, limit)
     }
+
+    /// Rename/move a note, repairing inbound links. Dry-run unless `apply`.
+    pub fn rename(&mut self, from: &str, to: &str, apply: bool) -> anyhow::Result<write::RenamePlan> {
+        let mut plan = write::plan_rename(&self.index, &self.root, from, to)?;
+        if apply {
+            write::apply_rename(&self.index, &self.root, &plan)?;
+            plan.applied = true;
+        }
+        Ok(plan)
+    }
+
+    /// Patch a note's frontmatter. Dry-run unless `apply`.
+    pub fn patch_frontmatter(
+        &mut self,
+        note: &str,
+        set: &[(String, String)],
+        add: &[(String, Vec<String>)],
+        unset: &[String],
+        apply: bool,
+    ) -> anyhow::Result<write::PatchPlan> {
+        let mut plan = write::plan_patch(&self.index, &self.root, note, set, add, unset)?;
+        if apply {
+            write::apply_patch(&self.index, &self.root, &plan)?;
+            plan.applied = true;
+        }
+        Ok(plan)
+    }
     pub fn context_bundle(&self, note: &str, budget: usize) -> anyhow::Result<bundle::Bundle> {
         bundle::context_bundle(&self.index, &self.root, note, budget)
     }
@@ -171,5 +198,49 @@ mod tests {
             .any(|n| n.path == "n.md"));
 
         assert!(vault.tree().unwrap().iter().any(|e| e.path == "n.md"));
+    }
+
+    #[test]
+    fn vault_rename_dry_run_then_apply() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.md"), "# A\n\n[[b]]\n").unwrap();
+        std::fs::write(root.join("b.md"), "# B\n").unwrap();
+        let mut vault = Vault::open_in_memory(root).unwrap();
+
+        let plan = vault.rename("b.md", "c.md", false).unwrap();
+        assert_eq!(plan.links_rewritten, 1);
+        assert!(!plan.applied);
+        assert!(root.join("b.md").exists());
+
+        let plan = vault.rename("b.md", "c.md", true).unwrap();
+        assert!(plan.applied);
+        assert!(root.join("c.md").exists());
+        assert!(!root.join("b.md").exists());
+        assert!(vault
+            .backlinks("c.md")
+            .unwrap()
+            .iter()
+            .any(|e| e.src == "a.md"));
+    }
+
+    #[test]
+    fn vault_patch_dry_run_then_apply() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.md"), "---\nstatus: active\n---\n# A\n").unwrap();
+        let mut vault = Vault::open_in_memory(root).unwrap();
+
+        let set = vec![("status".to_string(), "shipped".to_string())];
+        let plan = vault.patch_frontmatter("a.md", &set, &[], &[], false).unwrap();
+        assert!(!plan.applied);
+        assert!(std::fs::read_to_string(root.join("a.md"))
+            .unwrap()
+            .contains("active"));
+
+        vault.patch_frontmatter("a.md", &set, &[], &[], true).unwrap();
+        assert!(std::fs::read_to_string(root.join("a.md"))
+            .unwrap()
+            .contains("shipped"));
     }
 }
