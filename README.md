@@ -117,6 +117,25 @@ Lattice only sees the indexed vault and only edits structure (location/
 frontmatter/links); body prose stays on your normal edit tools.
 ```
 
+## Desktop app
+
+A native macOS app (Tauri + Svelte) for the human side: a three-pane workspace
+with a nested file tree + Orphans/Broken/Search in the sidebar, rendered notes
+with a backlinks/links panel, and a CodeMirror editor that writes back with a
+hash-mismatch guard. Light and dark themes (toggle in the ribbon).
+
+```bash
+# dev, against any vault
+cd app && LATTICE_ROOT=/path/to/vault npm run tauri dev
+
+# release bundle -> app/src-tauri/target/release/bundle/{macos/Lattice.app, dmg/*.dmg}
+cd app && npm run tauri build
+```
+
+The bundled app reads its vault from `LATTICE_ROOT`, so launch it from a terminal
+with that set. An in-app vault picker (so a double-clicked `.app` can choose a
+folder) is a planned follow-up.
+
 ## License
 
 Apache-2.0. See [LICENSE](./LICENSE).
