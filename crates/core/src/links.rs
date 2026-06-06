@@ -36,7 +36,7 @@ pub fn relative_path(source: &str, target: &str) -> String {
         i += 1;
     }
     let ups = src_dir.len() - i;
-    let mut parts: Vec<String> = std::iter::repeat("..".to_string()).take(ups).collect();
+    let mut parts: Vec<String> = std::iter::repeat_n("..".to_string(), ups).collect();
     for seg in &tgt[i..] {
         parts.push((*seg).to_string());
     }
@@ -73,7 +73,13 @@ pub fn rewrite_inbound(
 ) -> (String, usize) {
     let post: Vec<String> = all_paths
         .iter()
-        .map(|p| if p == old_path { new_path.to_string() } else { p.clone() })
+        .map(|p| {
+            if p == old_path {
+                new_path.to_string()
+            } else {
+                p.clone()
+            }
+        })
         .collect();
     let mut count = 0;
 
@@ -185,7 +191,11 @@ mod tests {
     }
 
     fn paths() -> Vec<String> {
-        vec!["docs/old.md".into(), "docs/other.md".into(), "top.md".into()]
+        vec![
+            "docs/old.md".into(),
+            "docs/other.md".into(),
+            "top.md".into(),
+        ]
     }
 
     #[test]
@@ -258,7 +268,12 @@ mod tests {
     #[test]
     fn rebase_recomputes_relative_links_from_new_location() {
         let p = vec!["docs/guide.md".to_string(), "docs/sub/old.md".to_string()];
-        let (out, n) = rebase_relative("see [g](../guide.md)", "docs/sub/old.md", "archive/old.md", &p);
+        let (out, n) = rebase_relative(
+            "see [g](../guide.md)",
+            "docs/sub/old.md",
+            "archive/old.md",
+            &p,
+        );
         assert_eq!(n, 1);
         assert_eq!(out, "see [g](../docs/guide.md)");
     }
