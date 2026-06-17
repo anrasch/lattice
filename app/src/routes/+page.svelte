@@ -9,7 +9,8 @@
   import Editor from "$lib/components/Editor.svelte";
   import Welcome from "$lib/components/Welcome.svelte";
   import { onMount } from "svelte";
-  import { api } from "$lib/api";
+  import { listen } from "@tauri-apps/api/event";
+  import { api, type ChangedEntry } from "$lib/api";
   import {
     vault,
     currentNote,
@@ -18,14 +19,24 @@
     leftView,
     leftOpen,
     rightOpen,
+    treeEntries,
+    linksRevision,
+    noteRevision,
+    externalUpdate,
+    applyChanges,
   } from "$lib/stores";
 
   let editor = $state<{ save: () => void } | undefined>();
   let recentList = $state<string[]>([]);
 
-  onMount(async () => {
-    vault.set(await api.currentVault());
-    recentList = await api.recents();
+  onMount(() => {
+    let un: (() => void) | undefined;
+    (async () => {
+      vault.set(await api.currentVault());
+      recentList = await api.recents();
+      un = await listen<ChangedEntry[]>("vault://changed", (e) => applyChanges(e.payload));
+    })();
+    return () => un?.();
   });
 
   function resetWorkspace() {
@@ -46,7 +57,23 @@
     if (path) await setVault(path);
   }
 
+  async function reloadVault() {
+    await api.resync();
+    treeEntries.set(await api.tree());
+    linksRevision.update((n) => n + 1);
+    noteRevision.update((n) => n + 1);
+  }
+
   let menuOpen = $state(false);
+
+  let showUpdated = $state(false);
+  $effect(() => {
+    if ($externalUpdate === 0) return;
+    showUpdated = true;
+    const t = setTimeout(() => (showUpdated = false), 2000);
+    return () => clearTimeout(t);
+  });
+
   let otherRecents = $derived(recentList.filter((p) => p !== $vault?.path));
 
   async function switchTo(path: string) {
@@ -72,6 +99,9 @@
     } else if (e.key === "\\") {
       e.preventDefault();
       leftOpen.update((v) => !v);
+    } else if (e.key === "r") {
+      e.preventDefault();
+      reloadVault();
     }
   }
 
@@ -111,6 +141,14 @@
             <span class="vname">{$vault.name}</span>
             <svg class="chev" class:open={menuOpen} viewBox="0 0 16 16" aria-hidden="true"
               ><path d="M4 6.5 8 10l4-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+            >
+          </button>
+          {#if showUpdated}
+            <span class="updated-pill">updated</span>
+          {/if}
+          <button class="reload-btn" title="Reload vault (⌘R)" aria-label="Reload vault" onclick={reloadVault}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"
+              ><path d="M13 8a5 5 0 1 1-1.46-3.54M13 3v2.5h-2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg
             >
           </button>
           {#if menuOpen}
@@ -221,22 +259,67 @@
 <style>
   .vault-bar {
     position: relative;
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--border);
   }
   .vault-switch {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     background: none;
     border: 0;
-    border-bottom: 1px solid var(--border);
     color: var(--text);
     cursor: pointer;
     padding: 10px 14px;
     font: inherit;
     font-size: 12.5px;
     font-weight: 550;
+  }
+  .reload-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    flex-shrink: 0;
+    background: none;
+    border: 0;
+    color: var(--text-faint);
+    cursor: pointer;
+  }
+  .reload-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+  .reload-btn:hover {
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+  .updated-pill {
+    position: absolute;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border-radius: 10px;
+    padding: 1px 7px;
+    pointer-events: none;
+    animation: pill-in 0.18s ease;
+  }
+  @keyframes pill-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
   .vault-switch:hover,
   .vault-switch.active {
