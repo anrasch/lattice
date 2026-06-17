@@ -26,19 +26,25 @@
     applyChanges,
     pinNote,
     previewTab,
+    previewNote,
   } from "$lib/stores";
 
   let editor = $state<{ save: () => void } | undefined>();
   let recentList = $state<string[]>([]);
 
   onMount(() => {
-    let un: (() => void) | undefined;
+    let unChanged: (() => void) | undefined;
+    let unOpen: (() => void) | undefined;
     (async () => {
       vault.set(await api.currentVault());
       recentList = await api.recents();
-      un = await listen<ChangedEntry[]>("vault://changed", (e) => applyChanges(e.payload));
+      unChanged = await listen<ChangedEntry[]>("vault://changed", (e) => applyChanges(e.payload));
+      unOpen = await listen<string>("vault://open", (e) => previewNote(e.payload));
     })();
-    return () => un?.();
+    return () => {
+      unChanged?.();
+      unOpen?.();
+    };
   });
 
   function resetWorkspace() {

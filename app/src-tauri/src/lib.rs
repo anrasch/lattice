@@ -5,6 +5,7 @@
 //! the app cache dir.
 
 use lattice_core::{
+    control,
     edit::{RawNote, WriteOutcome},
     model::{Edge, Node},
     tree::TreeEntry,
@@ -17,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -95,6 +96,64 @@ fn spawn_watcher(app: AppHandle, root: PathBuf, stop: Arc<AtomicBool>) {
             if !changes.is_empty() {
                 let _ = app.emit("vault://changed", changes);
             }
+        }
+    });
+}
+
+/// Watch `~/.lattice` for open requests. On a fresh request matching the open
+/// vault, raise the window and emit `vault://open {note}` for the frontend.
+/// Lives for the app's lifetime (vault-independent), so unlike the vault
+/// watcher it is not torn down on vault switch.
+fn spawn_control_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let watcher = match control::watch_control() {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("lattice: control watcher failed to start: {e}");
+                return;
+            }
+        };
+        let mut last_ts: i64 = 0;
+        loop {
+            // Park until something changes in the control dir.
+            if watcher.rx.recv().is_err() {
+                break; // sender dropped
+            }
+            // Coalesce the burst from a single write (temp + rename).
+            while watcher.rx.recv_timeout(Duration::from_millis(50)).is_ok() {}
+
+            let req = match control::read_open_request() {
+                Ok(Some(r)) => r,
+                _ => continue,
+            };
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            // Replay guard + freshness window (~10s).
+            if req.ts <= last_ts || now - req.ts > 10_000 {
+                continue;
+            }
+            // Only act if the request is for the vault we currently have open.
+            let open_vault = {
+                let state = app.state::<AppState>();
+                let guard = state.0.lock().unwrap();
+                guard.as_ref().map(|ov| ov.path.clone())
+            };
+            let matches = open_vault.is_some_and(|p| {
+                let canon = std::fs::canonicalize(&p)
+                    .map(|c| c.to_string_lossy().to_string())
+                    .unwrap_or(p);
+                canon == req.vault
+            });
+            if !matches {
+                continue;
+            }
+            last_ts = req.ts;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+            let _ = app.emit("vault://open", req.note);
         }
     });
 }
@@ -346,6 +405,7 @@ pub fn run() {
             if let (Some(root), Some(stop)) = (root, stop) {
                 spawn_watcher(app.handle().clone(), root, stop);
             }
+            spawn_control_watcher(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
