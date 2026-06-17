@@ -173,6 +173,12 @@ impl Vault {
     pub fn reindex(&mut self, rel: &str) -> anyhow::Result<()> {
         self.index.reindex_path(&self.root, rel)
     }
+
+    /// Look up the tree entry for one path (or `None` if not indexed). Lets the
+    /// desktop watcher hand the UI an authoritative entry per changed path.
+    pub fn tree_entry(&self, rel: &str) -> anyhow::Result<Option<tree::TreeEntry>> {
+        tree::tree_entry(&self.index, rel)
+    }
 }
 
 #[cfg(test)]
@@ -260,6 +266,23 @@ mod tests {
             .unwrap()
             .iter()
             .any(|n| n.path == "b.md"));
+    }
+
+    #[test]
+    fn tree_entry_reflects_reindex_add_and_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.md"), "# A\n").unwrap();
+        let mut vault = Vault::open_in_memory(root).unwrap();
+        assert!(vault.tree_entry("b.md").unwrap().is_none());
+
+        std::fs::write(root.join("b.md"), "# B\n").unwrap();
+        vault.reindex("b.md").unwrap();
+        assert_eq!(vault.tree_entry("b.md").unwrap().unwrap().title, "B");
+
+        std::fs::remove_file(root.join("b.md")).unwrap();
+        vault.reindex("b.md").unwrap();
+        assert!(vault.tree_entry("b.md").unwrap().is_none());
     }
 
     #[test]
