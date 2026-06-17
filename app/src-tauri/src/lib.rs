@@ -8,17 +8,23 @@ use lattice_core::{
     edit::{RawNote, WriteOutcome},
     model::{Edge, Node},
     tree::TreeEntry,
+    watch::watch_vault,
     Vault,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 struct OpenVault {
     path: String,
     vault: Vault,
+    watcher_stop: Arc<AtomicBool>,
 }
 
 struct AppState(Mutex<Option<OpenVault>>);
@@ -27,6 +33,70 @@ struct AppState(Mutex<Option<OpenVault>>);
 struct VaultInfo {
     path: String,
     name: String,
+}
+
+/// One changed path + its authoritative tree entry (`None` = removed/ignored).
+#[derive(Clone, Serialize)]
+struct ChangedEntry {
+    path: String,
+    entry: Option<TreeEntry>,
+}
+
+/// Watch `root` on a background thread: debounce bursts, reconcile the index
+/// via `sync`, and emit `vault://changed` with the changed paths' entries.
+/// Stops when `stop` is set (vault switch / app exit) or the vault is swapped.
+fn spawn_watcher(app: AppHandle, root: PathBuf, stop: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let watcher = match watch_vault(&root) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("lattice: watcher failed to start for {root:?}: {e}");
+                return;
+            }
+        };
+        let root_str = root.to_string_lossy().to_string();
+        loop {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            // Block for the first event (timed, so we can observe `stop`).
+            let first = match watcher.rx.recv_timeout(Duration::from_millis(400)) {
+                Ok(p) => p,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+            // Debounce: coalesce a ~150ms quiet window of further events.
+            let mut batch: HashSet<PathBuf> = HashSet::new();
+            batch.insert(first);
+            while let Ok(p) = watcher.rx.recv_timeout(Duration::from_millis(150)) {
+                batch.insert(p);
+            }
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let changes: Vec<ChangedEntry> = {
+                let state = app.state::<AppState>();
+                let guard = state.0.lock().unwrap();
+                let ov = match guard.as_ref() {
+                    Some(ov) if ov.path == root_str => ov,
+                    // No vault, or it was switched out from under us.
+                    _ => break,
+                };
+                let _ = ov.vault.sync();
+                batch
+                    .iter()
+                    .map(|rel| {
+                        let path = rel.to_string_lossy().to_string();
+                        let entry = ov.vault.tree_entry(&path).ok().flatten();
+                        ChangedEntry { path, entry }
+                    })
+                    .collect()
+            };
+            if !changes.is_empty() {
+                let _ = app.emit("vault://changed", changes);
+            }
+        }
+    });
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -131,10 +201,19 @@ async fn pick_vault(app: AppHandle) -> Option<String> {
 fn open_vault(app: AppHandle, state: State<AppState>, path: String) -> Result<VaultInfo, String> {
     let vault = Vault::open(&PathBuf::from(&path), &db_path(&app), ".aiignore")
         .map_err(|e| e.to_string())?;
-    *state.0.lock().unwrap() = Some(OpenVault {
-        path: path.clone(),
-        vault,
-    });
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(prev) = guard.as_ref() {
+            prev.watcher_stop.store(true, Ordering::Relaxed);
+        }
+        *guard = Some(OpenVault {
+            path: path.clone(),
+            vault,
+            watcher_stop: stop.clone(),
+        });
+    }
+    spawn_watcher(app.clone(), PathBuf::from(&path), stop);
 
     let mut cfg = load_config(&app);
     cfg.last_vault = Some(path.clone());
@@ -144,6 +223,11 @@ fn open_vault(app: AppHandle, state: State<AppState>, path: String) -> Result<Va
     save_config(&app, &cfg);
 
     Ok(vault_info(&path))
+}
+
+#[tauri::command]
+fn resync(state: State<AppState>) -> Result<bool, String> {
+    with_vault(&state, |v| v.sync())
 }
 
 // --- queries / edits ---------------------------------------------------------
@@ -221,7 +305,11 @@ pub fn run() {
         let db = std::env::var("LATTICE_DB").unwrap_or_else(|_| "lattice.db".into());
         Vault::open(&PathBuf::from(&root), &PathBuf::from(db), ".aiignore")
             .ok()
-            .map(|vault| OpenVault { path: root, vault })
+            .map(|vault| OpenVault {
+                path: root,
+                vault,
+                watcher_stop: Arc::new(AtomicBool::new(false)),
+            })
     });
 
     tauri::Builder::default()
@@ -229,16 +317,34 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState(Mutex::new(initial)))
         .setup(|app| {
-            // No env vault: restore the last vault from config if it still opens.
             let state = app.state::<AppState>();
-            if state.0.lock().unwrap().is_none() {
-                if let Some(path) = load_config(app.handle()).last_vault {
-                    if let Ok(vault) =
-                        Vault::open(&PathBuf::from(&path), &db_path(app.handle()), ".aiignore")
-                    {
-                        *state.0.lock().unwrap() = Some(OpenVault { path, vault });
+            {
+                // No env vault: restore the last vault from config if it still opens.
+                let mut guard = state.0.lock().unwrap();
+                if guard.is_none() {
+                    if let Some(path) = load_config(app.handle()).last_vault {
+                        if let Ok(vault) =
+                            Vault::open(&PathBuf::from(&path), &db_path(app.handle()), ".aiignore")
+                        {
+                            *guard = Some(OpenVault {
+                                path,
+                                vault,
+                                watcher_stop: Arc::new(AtomicBool::new(false)),
+                            });
+                        }
                     }
                 }
+            }
+            // Spawn a watcher for the open vault (env or restored), if any.
+            let (root, stop) = {
+                let guard = state.0.lock().unwrap();
+                match guard.as_ref() {
+                    Some(ov) => (Some(PathBuf::from(&ov.path)), Some(ov.watcher_stop.clone())),
+                    None => (None, None),
+                }
+            };
+            if let (Some(root), Some(stop)) = (root, stop) {
+                spawn_watcher(app.handle().clone(), root, stop);
             }
             Ok(())
         })
@@ -256,7 +362,8 @@ pub fn run() {
             orphans,
             broken_links,
             search,
-            query
+            query,
+            resync
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
