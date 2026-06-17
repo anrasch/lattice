@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { openTabs, currentNote, closeTab } from "$lib/stores";
+  import { openTabs, currentNote, previewTab, closeTab, pinNote } from "$lib/stores";
 
   function label(path: string) {
     return path.split("/").pop()?.replace(/\.md$/, "") ?? path;
@@ -8,8 +8,13 @@
 
 <div class="tabs">
   {#each $openTabs as path (path)}
-    <div class="tab" class:active={path === $currentNote}>
-      <button class="lbl" onclick={() => currentNote.set(path)} title={path}>
+    <div class="tab" class:active={path === $currentNote} class:preview={path === $previewTab}>
+      <button
+        class="lbl"
+        onclick={() => currentNote.set(path)}
+        ondblclick={() => pinNote(path)}
+        title={path === $previewTab ? `${path} (preview — double-click to keep)` : path}
+      >
         {label(path)}
       </button>
       <button class="x" aria-label="Close" onclick={() => closeTab(path)}>
@@ -47,6 +52,9 @@
   .tab.active {
     background: var(--surface);
     color: var(--text);
+  }
+  .tab.preview .lbl {
+    font-style: italic;
   }
   .tab.active::after {
     content: "";

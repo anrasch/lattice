@@ -8,6 +8,11 @@ import {
   noteRevision,
   changedPaths,
   applyChanges,
+  openTabs,
+  previewTab,
+  previewNote,
+  pinNote,
+  closeTab,
 } from "./stores";
 import type { TreeEntry } from "./api";
 
@@ -60,4 +65,48 @@ test("new nested folders are revealed for a small batch", () => {
   const c = get(collapsed);
   expect(c.has("deep")).toBe(false);
   expect(c.has("deep/sub")).toBe(false);
+});
+
+test("previewNote reuses a single preview slot", () => {
+  openTabs.set([]);
+  previewTab.set(null);
+  previewNote("a.md");
+  expect(get(openTabs)).toEqual(["a.md"]);
+  expect(get(previewTab)).toBe("a.md");
+  previewNote("b.md"); // replaces the preview slot, does not append
+  expect(get(openTabs)).toEqual(["b.md"]);
+  expect(get(previewTab)).toBe("b.md");
+  expect(get(currentNote)).toBe("b.md");
+});
+
+test("pinNote promotes the preview to permanent; next preview appends", () => {
+  openTabs.set([]);
+  previewTab.set(null);
+  previewNote("a.md");
+  pinNote("a.md");
+  expect(get(openTabs)).toEqual(["a.md"]);
+  expect(get(previewTab)).toBe(null);
+  previewNote("b.md");
+  expect(get(openTabs)).toEqual(["a.md", "b.md"]);
+  expect(get(previewTab)).toBe("b.md");
+});
+
+test("clicking a pinned file keeps the existing preview elsewhere", () => {
+  openTabs.set([]);
+  previewTab.set(null);
+  pinNote("a.md");
+  previewNote("b.md");
+  previewNote("a.md"); // focus the pinned tab; must not disturb preview b
+  expect(get(openTabs)).toEqual(["a.md", "b.md"]);
+  expect(get(previewTab)).toBe("b.md");
+  expect(get(currentNote)).toBe("a.md");
+});
+
+test("closing the preview tab clears the preview marker", () => {
+  openTabs.set([]);
+  previewTab.set(null);
+  previewNote("a.md");
+  closeTab("a.md");
+  expect(get(openTabs)).toEqual([]);
+  expect(get(previewTab)).toBe(null);
 });

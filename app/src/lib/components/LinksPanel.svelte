@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type Edge } from "$lib/api";
-  import { currentNote, linksRevision } from "$lib/stores";
+  import { previewNote, linksRevision } from "$lib/stores";
 
   let { note }: { note: string } = $props();
   let backlinks = $state<Edge[]>([]);
@@ -23,7 +23,7 @@
       Backlinks <span class="n">{backlinks.length}</span>
     </div>
     {#each backlinks as e}
-      <button class="ref" onclick={() => currentNote.set(e.src)}>
+      <button class="ref" onclick={() => previewNote(e.src)}>
         <span class="dot in"></span>{e.src.split("/").pop()}
       </button>
     {/each}
@@ -35,7 +35,7 @@
       Links out <span class="n">{outResolved.length}</span>
     </div>
     {#each outResolved as e}
-      <button class="ref" onclick={() => currentNote.set(e.dst!)}>
+      <button class="ref" onclick={() => previewNote(e.dst!)}>
         <span class="dot out"></span>{e.dst!.split("/").pop()}
       </button>
     {/each}

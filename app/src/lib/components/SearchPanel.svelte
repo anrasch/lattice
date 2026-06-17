@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type Node } from "$lib/api";
-  import { openNote } from "$lib/stores";
+  import { previewNote, pinNote } from "$lib/stores";
 
   let term = $state("");
   let results = $state<Node[]>([]);
@@ -36,7 +36,7 @@
   {#if searched}
     <div class="meta">{results.length} results</div>
     {#each results as n}
-      <button class="hit" onclick={() => openNote(n.path)}>
+      <button class="hit" onclick={() => previewNote(n.path)} ondblclick={() => pinNote(n.path)}>
         <span class="t">{n.title}</span>
         <span class="p">{n.path}</span>
       </button>

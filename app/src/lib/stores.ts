@@ -11,6 +11,9 @@ export type Theme = "light" | "dark";
 export const theme = writable<Theme>("light");
 
 export const openTabs = writable<string[]>([]);
+/** The one transient "preview" tab (italic), or null. Single-click previews; it
+ *  is reused for the next preview and promoted to permanent on pin. */
+export const previewTab = writable<string | null>(null);
 export type LeftView = "files" | "search" | "orphans" | "broken";
 export const leftView = writable<LeftView>("files");
 export const leftOpen = writable(true);
@@ -70,12 +73,29 @@ export function applyChanges(changes: ChangedEntry[]) {
   clearTimer = setTimeout(() => changedPaths.set(new Set()), 2000);
 }
 
-/** Open a note (adds a tab if needed) and focus it. */
-export function openNote(path: string) {
-  const tabs = get(openTabs);
-  if (!tabs.includes(path)) openTabs.set([...tabs, path]);
+/** Single-click: open `path` in the transient preview slot and focus it.
+ *  Reuses the existing preview tab (so clicking through the tree doesn't pile
+ *  up tabs); leaves already-pinned tabs and any other preview untouched. */
+export function previewNote(path: string) {
   currentNote.set(path);
   mode.set("read");
+  const tabs = get(openTabs);
+  if (tabs.includes(path)) return; // already a tab (pinned, or this preview)
+  const prev = get(previewTab);
+  if (prev && tabs.includes(prev)) {
+    openTabs.set(tabs.map((t) => (t === prev ? path : t))); // reuse the slot
+  } else {
+    openTabs.set([...tabs, path]);
+  }
+  previewTab.set(path);
+}
+
+/** Double-click / edit: promote `path` to a permanent tab and focus it. */
+export function pinNote(path: string) {
+  const tabs = get(openTabs);
+  if (!tabs.includes(path)) openTabs.set([...tabs, path]);
+  if (get(previewTab) === path) previewTab.set(null);
+  currentNote.set(path);
 }
 
 /** Close a tab, moving focus to a neighbour if it was active. */
@@ -84,6 +104,7 @@ export function closeTab(path: string) {
   const i = tabs.indexOf(path);
   const next = tabs.filter((t) => t !== path);
   openTabs.set(next);
+  if (get(previewTab) === path) previewTab.set(null);
   if (get(currentNote) === path) {
     currentNote.set(next[Math.min(i, next.length - 1)] ?? null);
   }

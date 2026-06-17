@@ -24,6 +24,8 @@
     noteRevision,
     externalUpdate,
     applyChanges,
+    pinNote,
+    previewTab,
   } from "$lib/stores";
 
   let editor = $state<{ save: () => void } | undefined>();
@@ -42,7 +44,15 @@
   function resetWorkspace() {
     currentNote.set(null);
     openTabs.set([]);
+    previewTab.set(null);
     leftView.set("files");
+  }
+
+  /** Toggle read/edit; entering edit pins the preview tab so it isn't lost. */
+  function toggleEdit() {
+    if (!$currentNote) return;
+    if ($mode === "read") pinNote($currentNote);
+    mode.update((m) => (m === "read" ? "edit" : "read"));
   }
 
   async function setVault(path: string) {
@@ -92,7 +102,7 @@
     if (!(e.metaKey || e.ctrlKey)) return;
     if (e.key === "e") {
       e.preventDefault();
-      if ($currentNote) mode.update((m) => (m === "read" ? "edit" : "read"));
+      toggleEdit();
     } else if (e.key === "s") {
       e.preventDefault();
       editor?.save();
@@ -113,7 +123,7 @@
   };
 
   let cols = $derived(
-    `var(--ribbon) ${$leftOpen ? "248px" : "0px"} minmax(0, 1fr) ${$rightOpen ? "280px" : "0px"}`,
+    `var(--ribbon) ${$leftOpen ? "248px" : "0px"} minmax(0, 1fr) ${$rightOpen ? "280px" : "28px"}`,
   );
   let fileName = $derived($currentNote ? $currentNote.split("/").pop() : "");
   let fileDir = $derived(
@@ -196,7 +206,7 @@
             class:on={$mode === "edit"}
             title="Edit (⌘E)"
             aria-label="Edit"
-            onclick={() => mode.update((m) => (m === "read" ? "edit" : "read"))}
+            onclick={toggleEdit}
           >
             <svg viewBox="0 0 16 16"
               ><path
@@ -244,11 +254,37 @@
     {/if}
   </section>
 
-  <aside class="right">
-    <div class="panel-head">Connections</div>
-    <div class="panel-body">
-      {#if $currentNote}<LinksPanel note={$currentNote} />{/if}
-    </div>
+  <aside class="right" class:collapsed={!$rightOpen}>
+    {#if $rightOpen}
+      <div class="panel-head conn-head">
+        <span>Connections</span>
+        <button
+          class="collapse-btn"
+          title="Collapse connections"
+          aria-label="Collapse connections"
+          onclick={() => rightOpen.set(false)}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"
+            ><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+          >
+        </button>
+      </div>
+      <div class="panel-body">
+        {#if $currentNote}<LinksPanel note={$currentNote} />{/if}
+      </div>
+    {:else}
+      <button
+        class="conn-rail"
+        title="Show connections"
+        aria-label="Show connections"
+        onclick={() => rightOpen.set(true)}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true"
+          ><path d="M10 4L6 8l4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg
+        >
+        <span class="rail-label">Connections</span>
+      </button>
+    {/if}
   </aside>
 </main>
   {/key}
@@ -440,6 +476,63 @@
   .panel-body {
     flex: 1;
     overflow-y: auto;
+  }
+  .conn-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .collapse-btn {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: -2px -4px -2px 0;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-faint);
+    cursor: pointer;
+  }
+  .collapse-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+  .collapse-btn:hover {
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+  .conn-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+    padding: 12px 0;
+    background: none;
+    border: 0;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+  .conn-rail:hover {
+    color: var(--text-dim);
+    background: var(--surface-2);
+  }
+  .conn-rail svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+  .rail-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .center {

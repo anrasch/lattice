@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api } from "$lib/api";
   import { buildTree, folderPaths, type TreeItem } from "$lib/tree";
-  import { currentNote, treeEntries, collapsed, changedPaths, openNote } from "$lib/stores";
+  import { currentNote, treeEntries, collapsed, changedPaths, previewNote, pinNote } from "$lib/stores";
 
   // Rebuilds automatically whenever the entries store is spliced.
   let tree = $derived<TreeItem[]>(buildTree($treeEntries));
@@ -49,7 +49,8 @@
       class:changed={$changedPaths.has(node.path)}
       style="padding-left: {depth * 13 + 24}px"
       title={node.path}
-      onclick={() => openNote(node.path)}
+      onclick={() => previewNote(node.path)}
+      ondblclick={() => pinNote(node.path)}
     >
       {node.name.replace(/\.md$/, "")}
     </button>

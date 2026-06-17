@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type Node, type Edge } from "$lib/api";
-  import { openNote } from "$lib/stores";
+  import { previewNote, pinNote } from "$lib/stores";
 
   let { kind }: { kind: "orphans" | "broken" } = $props();
   let nodes = $state<Node[]>([]);
@@ -20,13 +20,23 @@
 
   {#if kind === "orphans"}
     {#each nodes as n}
-      <button class="hit" onclick={() => openNote(n.path)} title={n.path}>
+      <button
+        class="hit"
+        onclick={() => previewNote(n.path)}
+        ondblclick={() => pinNote(n.path)}
+        title={n.path}
+      >
         {n.path}
       </button>
     {/each}
   {:else}
     {#each edges as e}
-      <button class="hit broken" onclick={() => openNote(e.src)} title={e.src}>
+      <button
+        class="hit broken"
+        onclick={() => previewNote(e.src)}
+        ondblclick={() => pinNote(e.src)}
+        title={e.src}
+      >
         <span class="src">{e.src.split("/").pop()}</span>
         <span class="arrow">→</span>
         <span class="tgt">{e.raw_target}</span>
