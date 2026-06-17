@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type Edge } from "$lib/api";
-  import { currentNote } from "$lib/stores";
+  import { currentNote, linksRevision } from "$lib/stores";
 
   let { note }: { note: string } = $props();
   let backlinks = $state<Edge[]>([]);
@@ -8,6 +8,7 @@
 
   $effect(() => {
     const n = note;
+    $linksRevision; // refetch on any external change/reload
     api.backlinks(n).then((b) => (backlinks = b));
     api.links(n).then((l) => (outbound = l));
   });
