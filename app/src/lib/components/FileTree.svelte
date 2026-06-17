@@ -2,14 +2,14 @@
   import { onMount } from "svelte";
   import { api } from "$lib/api";
   import { buildTree, folderPaths, type TreeItem } from "$lib/tree";
-  import { currentNote, treeEntries, collapsed, openNote } from "$lib/stores";
+  import { currentNote, treeEntries, collapsed, changedPaths, openNote } from "$lib/stores";
 
-  let tree = $state<TreeItem[]>([]);
+  // Rebuilds automatically whenever the entries store is spliced.
+  let tree = $derived<TreeItem[]>(buildTree($treeEntries));
 
   onMount(async () => {
     const entries = await api.tree();
     treeEntries.set(entries);
-    tree = buildTree(entries);
     // Start fully collapsed; the vault is large.
     collapsed.set(new Set(folderPaths(entries)));
   });
@@ -46,6 +46,7 @@
       class="row file"
       class:active={node.path === $currentNote}
       class:index={node.isIndex}
+      class:changed={$changedPaths.has(node.path)}
       style="padding-left: {depth * 13 + 24}px"
       title={node.path}
       onclick={() => openNote(node.path)}
@@ -83,9 +84,13 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: background 0.4s ease;
   }
   .row:hover {
     background: var(--surface-2);
+  }
+  .row.changed {
+    background: var(--accent-dim);
   }
   .folder {
     color: var(--text);
