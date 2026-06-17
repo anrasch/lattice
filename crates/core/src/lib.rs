@@ -3,6 +3,7 @@
 
 pub mod bundle;
 pub mod config;
+pub mod control;
 pub mod edit;
 pub mod index;
 pub mod links;
