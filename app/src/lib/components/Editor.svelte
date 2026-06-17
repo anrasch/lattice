@@ -14,7 +14,13 @@
   let view: EditorView | undefined;
   let loadedHash = $state("");
   let conflict = $state<string | null>(null);
-  let changedOnDisk = $derived($changedPaths.has(note));
+  // Latches when this note changes on disk and stays until save/reload — the
+  // changedPaths signal is transient (clears after ~2s), but the warning must
+  // persist while the edit is still in conflict with disk.
+  let staleOnDisk = $state(false);
+  $effect(() => {
+    if ($changedPaths.has(note)) staleOnDisk = true;
+  });
 
   const theme = EditorView.theme(
     {
@@ -76,6 +82,7 @@
     const out: WriteOutcome = await api.save(note, content, loadedHash);
     if (out.outcome === "written") {
       loadedHash = out.hash;
+      staleOnDisk = false;
       mode.set("read");
     } else {
       conflict = out.on_disk;
@@ -86,13 +93,14 @@
     const raw = await api.readRaw(note);
     loadedHash = raw.hash;
     conflict = null;
+    staleOnDisk = false;
   }
 </script>
 
 <div class="editor-wrap">
   <div class="cm" bind:this={el}></div>
 
-  {#if changedOnDisk && conflict === null}
+  {#if staleOnDisk && conflict === null}
     <div class="ondisk">This note changed on disk. Your edits are intact; saving will prompt a conflict.</div>
   {/if}
 
