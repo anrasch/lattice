@@ -7,13 +7,14 @@
   import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
   import { tags as t } from "@lezer/highlight";
   import { api, type WriteOutcome } from "$lib/api";
-  import { mode } from "$lib/stores";
+  import { mode, changedPaths } from "$lib/stores";
 
   let { note }: { note: string } = $props();
   let el: HTMLDivElement;
   let view: EditorView | undefined;
   let loadedHash = $state("");
   let conflict = $state<string | null>(null);
+  let changedOnDisk = $derived($changedPaths.has(note));
 
   const theme = EditorView.theme(
     {
@@ -91,6 +92,10 @@
 <div class="editor-wrap">
   <div class="cm" bind:this={el}></div>
 
+  {#if changedOnDisk && conflict === null}
+    <div class="ondisk">This note changed on disk. Your edits are intact; saving will prompt a conflict.</div>
+  {/if}
+
   <div class="bar">
     <span class="hint">Markdown · ⌘S to save</span>
     <div class="actions">
@@ -164,6 +169,15 @@
   .primary:hover {
     background: var(--accent-bright);
     border-color: var(--accent-bright);
+  }
+  .ondisk {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-dim);
   }
   .conflict {
     margin-top: 12px;
