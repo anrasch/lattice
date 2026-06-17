@@ -101,6 +101,8 @@ enum Cmd {
         #[arg(long)]
         apply: bool,
     },
+    /// Open + focus a note in the running Lattice desktop app.
+    Open { note: String },
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<()> {
@@ -162,6 +164,13 @@ fn main() -> Result<()> {
                 })
                 .collect();
             print_json(&vault.patch_frontmatter(&note, &set, &add, &unset, apply)?)
+        }
+        Cmd::Open { note } => {
+            if vault.tree_entry(&note)?.is_none() {
+                anyhow::bail!("no such note: {note}");
+            }
+            lattice_core::control::write_open_request(&cli.root, &note)?;
+            print_json(&serde_json::json!({ "ok": true, "note": note }))
         }
     }
 }

@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 #[derive(Clone)]
 pub struct LatticeServer {
     vault: Arc<Mutex<Vault>>,
+    root: PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
@@ -34,6 +35,7 @@ impl LatticeServer {
         let vault = Vault::open(&root, &db, ".aiignore").expect("failed to open vault");
         Self {
             vault: Arc::new(Mutex::new(vault)),
+            root,
             tool_router: Self::tool_router(),
         }
     }
@@ -357,6 +359,28 @@ impl LatticeServer {
             &v.patch_frontmatter(&note, &set, &add, &unset, apply.unwrap_or(false))
                 .map_err(internal)?,
         )
+    }
+
+    #[tool(
+        name = "vault_open",
+        description = "Open and focus a note in the running Lattice desktop app (the shared human+agent view). Writes a request the app picks up if it is running on this vault; cannot confirm the window actually came up."
+    )]
+    async fn vault_open(
+        &self,
+        Parameters(NoteArg { note }): Parameters<NoteArg>,
+    ) -> Result<String, ErrorData> {
+        if self.vault()?.tree_entry(&note).map_err(internal)?.is_none() {
+            return Err(ErrorData::invalid_params(
+                format!("no such note: {note}"),
+                None,
+            ));
+        }
+        lattice_core::control::write_open_request(&self.root, &note).map_err(internal)?;
+        let vault = std::fs::canonicalize(&self.root)
+            .unwrap_or_else(|_| self.root.clone())
+            .to_string_lossy()
+            .to_string();
+        json(&serde_json::json!({ "ok": true, "note": note, "vault": vault }))
     }
 }
 
