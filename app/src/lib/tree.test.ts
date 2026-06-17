@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { buildTree, folderPaths } from "./tree";
+import { buildTree, folderPaths, spliceEntries, newFolderPaths } from "./tree";
 import type { TreeEntry } from "./api";
 
 function entry(path: string, isIndex = false): TreeEntry {
@@ -42,4 +42,22 @@ test("folderPaths returns every ancestor folder once", () => {
     entry("top.md"),
   ]).sort();
   expect(paths).toEqual(["docs", "docs/sub"]);
+});
+
+test("spliceEntries upserts and removes by path", () => {
+  const prev = [entry("a.md"), entry("docs/b.md"), entry("docs/c.md")];
+  const next = spliceEntries(prev, [
+    { path: "docs/b.md", entry: null }, // removed
+    { path: "docs/c.md", entry: { ...entry("docs/c.md"), title: "C2" } }, // replaced
+    { path: "docs/d.md", entry: entry("docs/d.md") }, // added
+  ]);
+  const byPath = Object.fromEntries(next.map((e) => [e.path, e]));
+  expect(Object.keys(byPath).sort()).toEqual(["a.md", "docs/c.md", "docs/d.md"]);
+  expect(byPath["docs/c.md"].title).toBe("C2");
+});
+
+test("newFolderPaths returns folders introduced by the next set", () => {
+  const prev = [entry("docs/a.md")];
+  const next = [entry("docs/a.md"), entry("docs/sub/deep.md"), entry("notes/n.md")];
+  expect(newFolderPaths(prev, next).sort()).toEqual(["docs/sub", "notes"]);
 });

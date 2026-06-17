@@ -1,4 +1,4 @@
-import type { TreeEntry } from "./api";
+import type { TreeEntry, ChangedEntry } from "./api";
 
 export interface TreeFolder {
   kind: "folder";
@@ -67,4 +67,23 @@ export function folderPaths(entries: TreeEntry[]): string[] {
     }
   }
   return [...set];
+}
+
+/** Apply a batch of changes to a flat entry list: remove `null`s, upsert the rest. */
+export function spliceEntries(
+  prev: TreeEntry[],
+  changes: ChangedEntry[],
+): TreeEntry[] {
+  const map = new Map(prev.map((e) => [e.path, e]));
+  for (const c of changes) {
+    if (c.entry === null) map.delete(c.path);
+    else map.set(c.path, c.entry);
+  }
+  return [...map.values()];
+}
+
+/** Folder paths present in `next` but not in `prev` (newly introduced folders). */
+export function newFolderPaths(prev: TreeEntry[], next: TreeEntry[]): string[] {
+  const before = new Set(folderPaths(prev));
+  return folderPaths(next).filter((p) => !before.has(p));
 }

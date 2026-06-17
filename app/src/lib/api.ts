@@ -31,6 +31,10 @@ export interface VaultInfo {
   path: string;
   name: string;
 }
+export interface ChangedEntry {
+  path: string;
+  entry: TreeEntry | null;
+}
 
 export const api = {
   currentVault: () => invoke<VaultInfo | null>("current_vault"),
@@ -48,4 +52,5 @@ export const api = {
   brokenLinks: () => invoke<Edge[]>("broken_links"),
   search: (text: string) => invoke<Node[]>("search", { text }),
   query: (filters: string[]) => invoke<Node[]>("query", { filters }),
+  resync: () => invoke<boolean>("resync"),
 };
