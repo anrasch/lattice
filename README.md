@@ -10,7 +10,7 @@ Lattice treats a directory of plain `.md` files as a knowledge graph. Humans rea
 
 ## Status
 
-**v0.2.0** — usable day-to-day as a single-user, local tool (macOS app + cross-platform engine/CLI/MCP). The read and structured-write tools are stable and dogfooded. See the [changelog](CHANGELOG.md) and [releases](https://github.com/anrasch/lattice/releases).
+**v0.3.0** — usable day-to-day as a single-user, local tool (macOS app + cross-platform engine/CLI/MCP). The read and structured-write tools are stable and dogfooded, and the desktop app is a live view that reflects external changes and lets an agent open notes in it. See the [changelog](CHANGELOG.md) and [releases](https://github.com/anrasch/lattice/releases).
 
 ## Why
 
@@ -39,7 +39,7 @@ The vault's `.md` files are the source of truth. A SQLite (`rusqlite`, FTS5) ind
 crates/core   the engine library (parse, index, query, edit)
 crates/mcp    rmcp server binary
 crates/cli    clap binary
-app/          Tauri app (Rust backend + Svelte webview)   [Phase B]
+app/          Tauri app (Rust backend + Svelte webview)
 fixtures/     synthetic vault for tests
 ```
 
@@ -89,6 +89,9 @@ Both are **dry-run by default** — they return a diff plan; pass `apply: true` 
 write. Lattice only ever edits working-tree files; it never stages or commits to
 git, and it never writes body prose (use your editor for that).
 
+**Cowork:** `vault_open` opens and focuses a note in the running desktop app, so
+the agent and the human look at the same document (15 tools total).
+
 ```bash
 # preview a rename (nothing written); add --apply to do it
 lattice --root /path/to/vault rename docs/old.md docs/new.md
@@ -116,6 +119,8 @@ over raw grep/read — they return structure and relationships, not file dumps:
 - Structural edits → `vault_rename` (move a note + fix every backlink) and
   `vault_patch_frontmatter` (set/add/unset keys). Both are dry-run by default:
   preview the diff, then re-call with `apply:true`. They never touch git.
+- Cowork → `vault_open` to surface the note you're discussing in my Lattice
+  window, so we're looking at the same document.
 
 Lattice only sees the indexed vault and only edits structure (location/
 frontmatter/links); body prose stays on your normal edit tools.
@@ -123,10 +128,26 @@ frontmatter/links); body prose stays on your normal edit tools.
 
 ## Desktop app
 
-A native macOS app (Tauri + Svelte) for the human side: a three-pane workspace
-with a nested file tree + Orphans/Broken/Search in the sidebar, rendered notes
-with a backlinks/links panel, and a CodeMirror editor that writes back with a
-hash-mismatch guard. Light and dark themes (toggle in the ribbon).
+A native, signed + notarized macOS app (Tauri + Svelte) for the human side.
+Download the latest `.dmg` from [Releases](https://github.com/anrasch/lattice/releases)
+and double-click — a Welcome screen with a folder picker opens (recent vaults are
+remembered), so no `LATTICE_ROOT` is required.
+
+- **Three-pane workspace** — a nested file tree with Orphans/Broken/Search in the
+  sidebar, rendered notes with a (collapsible) backlinks/links panel, and a
+  CodeMirror editor that writes back with a hash-mismatch guard. Light and dark
+  themes (toggle in the ribbon).
+- **Live** — a file watcher reflects external changes (git, another editor, the
+  MCP/CLI) in place: the tree, the open note, and connections refresh without a
+  reload, and an in-progress edit is guarded against being clobbered (⌘R forces a
+  resync).
+- **Preview tabs** — single-click previews a note in one reused tab; double-click
+  or editing pins it, so browsing the tree doesn't pile up tabs.
+- **Agent-directed open** — when an agent calls `vault_open` (or you run
+  `lattice open <note>`), the app raises and focuses that note, so you and the
+  agent are looking at the same document.
+
+Build it yourself:
 
 ```bash
 # dev, against any vault
@@ -135,10 +156,6 @@ cd app && LATTICE_ROOT=/path/to/vault npm run tauri dev
 # release bundle -> app/src-tauri/target/release/bundle/{macos/Lattice.app, dmg/*.dmg}
 cd app && npm run tauri build
 ```
-
-The bundled app reads its vault from `LATTICE_ROOT`, so launch it from a terminal
-with that set. An in-app vault picker (so a double-clicked `.app` can choose a
-folder) is a planned follow-up.
 
 ## License
 

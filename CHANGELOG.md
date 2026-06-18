@@ -26,7 +26,7 @@ patch = fixes).
   command `lattice open <note>` focus a note in the running desktop app, so an
   agent and the human look at the same document. Delivered over a small control
   file in `~/.lattice` (a `vault://open` event raises the window and opens the
-  note in the preview slot). 16 MCP tools total.
+  note in the preview slot). 15 MCP tools total.
 
 ## [0.2.0] - 2026-06-06
 
