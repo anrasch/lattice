@@ -7,6 +7,27 @@ patch = fixes).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-18
+
+### Added
+- **Live updates.** The desktop app is now a live view of the vault instead of an
+  open-time snapshot. A filesystem watcher reindexes external changes (git,
+  editor saves, MCP/CLI edits) and surgically refreshes the affected tree entries,
+  the open note, and the connections panel — no manual reload. A persistent
+  "changed on disk" guard protects an in-progress edit (the buffer is never
+  clobbered), with a transient "updated" cue, a changed-row highlight, and a
+  manual reload (⌘R).
+- **Preview tabs.** Single-clicking a note (in the tree, search, orphans, broken,
+  or backlinks) opens it in one reused *preview* tab (italic); double-clicking or
+  entering edit mode pins it. Browsing no longer piles up tabs.
+- **Collapsible connections panel.** The right "Connections" panel collapses to a
+  slim edge rail (click to reopen), available even with no note open.
+- **`vault_open` — agent-directed open.** A new MCP tool `vault_open` and CLI
+  command `lattice open <note>` focus a note in the running desktop app, so an
+  agent and the human look at the same document. Delivered over a small control
+  file in `~/.lattice` (a `vault://open` event raises the window and opens the
+  note in the preview slot). 16 MCP tools total.
+
 ## [0.2.0] - 2026-06-06
 
 ### Added
