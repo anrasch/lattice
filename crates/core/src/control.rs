@@ -115,8 +115,17 @@ mod tests {
         write_open_request_to(dir.path(), vault.path(), "docs/a.md").unwrap();
         let req = read_open_request_from(dir.path()).unwrap().unwrap();
         assert_eq!(req.note, "docs/a.md");
-        let leaf = vault.path().file_name().unwrap().to_string_lossy().to_string();
-        assert!(req.vault.ends_with(&leaf), "vault path stored: {}", req.vault);
+        let leaf = vault
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            req.vault.ends_with(&leaf),
+            "vault path stored: {}",
+            req.vault
+        );
         assert!(req.ts > 0);
     }
 
