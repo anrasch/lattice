@@ -10,7 +10,7 @@ Lattice treats a directory of plain `.md` files as a knowledge graph. Humans rea
 
 ## Status
 
-**v0.3.0** — usable day-to-day as a single-user, local tool (macOS app + cross-platform engine/CLI/MCP). The read and structured-write tools are stable and dogfooded, and the desktop app is a live view that reflects external changes and lets an agent open notes in it. See the [changelog](CHANGELOG.md) and [releases](https://github.com/anrasch/lattice/releases).
+**v0.3.0** — usable day-to-day as a single-user, local tool (macOS app + cross-platform engine/CLI/MCP). The read and structured-write tools are stable and dogfooded, and the desktop app is a live view that reflects external changes and lets an agent open notes in it. See the [changelog](CHANGELOG.md) and [releases](https://github.com/anrasch/lattice/releases). Where it goes next, from local tool to shared memory for teams and their agents: [ROADMAP.md](ROADMAP.md).
 
 ## Why
 
